@@ -1,0 +1,164 @@
+---@diagnostic disable: undefined-global, undefined-field
+local addonName, QB = ...
+
+QB = QB or _G.QuestBuddy or {}
+_G.QuestBuddy = QB
+QB.Tracker = QB.Tracker or {}
+
+local Tracker = QB.Tracker
+local CreateFrame = _G.CreateFrame
+
+Tracker.frame = Tracker.frame or nil
+Tracker.rows = Tracker.rows or {}
+
+local STATUS_COLORS = {
+    Live = { r = 0.47, g = 0.82, b = 0.47 },
+    Updating = { r = 0.96, g = 0.82, b = 0.36 },
+    Stale = { r = 0.95, g = 0.56, b = 0.24 },
+    Offline = { r = 0.62, g = 0.62, b = 0.62 },
+}
+
+local function getStatusColor(status)
+    return STATUS_COLORS[status] or STATUS_COLORS.Offline
+end
+
+local function applyBackdrop(frame)
+    frame:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    frame:SetBackdropColor(0.03, 0.03, 0.05, 0.9)
+    frame:SetBackdropBorderColor(0.3, 0.33, 0.38, 1)
+end
+
+function Tracker.BuildRows(localSnapshot, peer, status)
+    local rows = {}
+    local peerSnapshot = peer and peer.snapshot or nil
+    local peerMap = QB.Snapshot:IndexByKey(peerSnapshot)
+
+    for _, quest in ipairs((localSnapshot and localSnapshot.quests) or {}) do
+        if quest.watched then
+            local buddyQuest = peerMap[quest.questKey]
+            local buddyText
+
+            if status == "Stale" then
+                buddyText = "Stale"
+            elseif status == "Updating" then
+                buddyText = "Updating..."
+            elseif status == "Offline" then
+                buddyText = "Offline"
+            elseif buddyQuest then
+                buddyText = QB.Snapshot:SummarizeQuest(buddyQuest)
+            else
+                buddyText = "Buddy missing"
+            end
+
+            table.insert(rows, {
+                title = quest.title,
+                buddyText = buddyText,
+                hasBuddyQuest = buddyQuest ~= nil,
+            })
+        end
+    end
+
+    return rows
+end
+
+function Tracker:Initialize()
+    if self.frame or not CreateFrame then
+        return
+    end
+
+    self.frame = CreateFrame("Frame", "QuestBuddyTrackerOverlay", UIParent)
+    self.frame:SetWidth(280)
+    self.frame:SetHeight(24)
+    applyBackdrop(self.frame)
+
+    local watchFrame = _G.WatchFrame
+    if watchFrame then
+        self.frame:SetPoint("TOPLEFT", watchFrame, "BOTTOMLEFT", 0, -8)
+    else
+        self.frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -60, -220)
+    end
+
+    self.frame.header = self.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    self.frame.header:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 10, -8)
+    self.frame.header:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -10, -8)
+    self.frame.header:SetJustifyH("LEFT")
+
+    self.frame:Hide()
+end
+
+function Tracker:AcquireRow(index)
+    if self.rows[index] then
+        return self.rows[index]
+    end
+
+    local row = CreateFrame("Frame", nil, self.frame)
+    row:SetWidth(260)
+    row:SetHeight(28)
+
+    row.title = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    row.title:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+    row.title:SetJustifyH("LEFT")
+
+    row.detail = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    row.detail:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
+    row.detail:SetPoint("TOPRIGHT", row.title, "BOTTOMRIGHT", 0, -2)
+    row.detail:SetJustifyH("LEFT")
+
+    self.rows[index] = row
+    return row
+end
+
+function Tracker:Refresh()
+    if not self.frame then
+        return
+    end
+
+    if not QB:GetOption("enableTrackerOverlay") then
+        self.frame:Hide()
+        return
+    end
+
+    local focusedBuddy = QB.State:GetFocusedBuddy()
+    local localSnapshot = QB.State:GetLocalSnapshot()
+    local peer = focusedBuddy and QB.State:GetPeer(focusedBuddy) or nil
+    local status = QB.State:GetPeerStatus(peer, QB.Compat:GetTime(), QB:GetOption("staleTimeoutSeconds"))
+    local rows = Tracker.BuildRows(localSnapshot, peer, status)
+
+    if not focusedBuddy or #rows == 0 then
+        self.frame:Hide()
+        return
+    end
+
+    local statusColor = getStatusColor(status)
+    self.frame.header:SetText(QB.Compat:Colorize(string.format("%s  %s", focusedBuddy, status), statusColor))
+
+    local previousRow = nil
+    for index, rowData in ipairs(rows) do
+        local row = self:AcquireRow(index)
+        row:ClearAllPoints()
+        if previousRow then
+            row:SetPoint("TOPLEFT", previousRow, "BOTTOMLEFT", 0, -10)
+        else
+            row:SetPoint("TOPLEFT", self.frame.header, "BOTTOMLEFT", 0, -6)
+        end
+        row.title:SetText(rowData.title)
+        row.detail:SetText(rowData.buddyText)
+        row:Show()
+        previousRow = row
+    end
+
+    for index = #rows + 1, #self.rows do
+        self.rows[index]:Hide()
+    end
+
+    self.frame:SetHeight(28 + (#rows * 34))
+    self.frame:Show()
+end

@@ -1,0 +1,18 @@
+## Interface: 120001, 110207
+## Title: QuestBuddy
+## Notes: Lightweight party quest progress visibility for duos and small parties.
+## Author: GitHub Copilot
+## Version: 1.0.0
+## SavedVariables: QuestBuddyDB
+
+Compat.lua
+PartyApi.lua
+QuestApi.lua
+Snapshot.lua
+Protocol.lua
+State.lua
+Tracker.lua
+UI.lua
+Options.lua
+Comms.lua
+QuestBuddy.lua
