@@ -73,10 +73,11 @@ end
 
 function State:MarkPeerHello(name, revision, now)
     local peer = self:EnsurePeer(name)
+    local helloRevision = tonumber(revision) or 0
     peer.online = true
     peer.lastSeen = now
-    peer.helloRevision = tonumber(revision) or 0
-    if not peer.snapshot then
+    peer.helloRevision = helloRevision
+    if not peer.snapshot or helloRevision > (peer.revision or 0) then
         peer.updating = true
     end
     return peer
@@ -89,6 +90,7 @@ function State:ApplyPeerSnapshot(name, snapshot, now)
     peer.lastSeen = now
     peer.lastUpdate = now
     peer.revision = snapshot.revision or peer.revision or 0
+    peer.helloRevision = peer.revision
     peer.snapshot = snapshot
     return peer
 end

@@ -81,8 +81,9 @@ local function serializeObjective(objective)
     }, "\t")
 end
 
-local function serializeQuest(quest)
+local function serializeQuest(quest, includeVolatileFields)
     local lines = {}
+    local updated = includeVolatileFields == false and 0 or quest.updated
     table.insert(lines, table.concat({
         "Q",
         escapeField(quest.questKey),
@@ -91,7 +92,7 @@ local function serializeQuest(quest)
         escapeField(quest.level),
         escapeField(quest.status),
         quest.watched and "1" or "0",
-        escapeField(quest.updated),
+        escapeField(updated),
         tostring(#(quest.objectives or {})),
     }, "\t"))
 
@@ -102,7 +103,7 @@ local function serializeQuest(quest)
     return lines
 end
 
-function Snapshot:Serialize(snapshot, includeMetadata)
+function Snapshot:Serialize(snapshot, includeMetadata, includeVolatileFields)
     local lines = {}
     local revision = includeMetadata == false and 0 or (snapshot.revision or 0)
     local createdAt = includeMetadata == false and 0 or (snapshot.createdAt or 0)
@@ -117,7 +118,7 @@ function Snapshot:Serialize(snapshot, includeMetadata)
     }, "\t"))
 
     for _, quest in ipairs(snapshot.quests or {}) do
-        local questLines = serializeQuest(quest)
+        local questLines = serializeQuest(quest, includeVolatileFields)
         for _, line in ipairs(questLines) do
             table.insert(lines, line)
         end
@@ -201,7 +202,7 @@ function Snapshot:Deserialize(serialized)
 end
 
 function Snapshot:BuildSignature(snapshot)
-    return self:Serialize(snapshot, false)
+    return self:Serialize(snapshot, false, false)
 end
 
 function Snapshot:ChunkString(serialized, maxChunkSize)

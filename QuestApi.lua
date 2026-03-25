@@ -6,6 +6,7 @@ _G.QuestBuddy = QB
 QB.QuestApi = QB.QuestApi or {}
 
 local QuestApi = QB.QuestApi
+local C_QuestLog = _G.C_QuestLog
 local GetNumQuestLogEntries = _G.GetNumQuestLogEntries
 local GetQuestLogTitle = _G.GetQuestLogTitle
 local GetNumQuestLeaderBoards = _G.GetNumQuestLeaderBoards
@@ -51,8 +52,49 @@ function QuestApi:NormalizeStatus(isComplete)
     return "active"
 end
 
+local function getQuestInfo(questIndex)
+    if C_QuestLog and C_QuestLog.GetInfo then
+        local info = C_QuestLog.GetInfo(questIndex)
+        if info then
+            return info.title, info.level, info.isHeader, info.isComplete, info.questID
+        end
+        return nil, nil, nil, nil, nil
+    end
+
+    local title, level, _, isHeader, _, isComplete, _, questId = GetQuestLogTitle(questIndex)
+    return title, level, isHeader, isComplete, questId
+end
+
 function QuestApi:BuildObjectives(questIndex)
     local objectives = {}
+    local title, _, isHeader, _, questId = getQuestInfo(questIndex)
+
+    if title and not isHeader and questId and questId > 0 and C_QuestLog and C_QuestLog.GetQuestObjectives then
+        local questObjectives = C_QuestLog.GetQuestObjectives(questId) or {}
+        for _, objective in ipairs(questObjectives) do
+            local text = objective.text or objective.description or ""
+            local current = objective.numFulfilled
+            local required = objective.numRequired
+            local done = objective.finished and true or false
+
+            if current == nil or required == nil then
+                current, required, done = self:ParseObjectiveProgress(text, done)
+            end
+
+            table.insert(objectives, {
+                text = text,
+                current = current,
+                required = required,
+                done = done,
+                objectiveType = objective.type,
+            })
+        end
+
+        if #objectives > 0 then
+            return objectives
+        end
+    end
+
     local objectiveCount = GetNumQuestLeaderBoards and GetNumQuestLeaderBoards(questIndex) or 0
 
     for objectiveIndex = 1, objectiveCount do
@@ -80,9 +122,15 @@ function QuestApi:BuildLocalSnapshot(now)
         quests = {},
     }
 
-    local entries = GetNumQuestLogEntries and GetNumQuestLogEntries() or 0
+    local entries = 0
+    if C_QuestLog and C_QuestLog.GetNumQuestLogEntries then
+        entries = C_QuestLog.GetNumQuestLogEntries() or 0
+    elseif GetNumQuestLogEntries then
+        entries = GetNumQuestLogEntries() or 0
+    end
+
     for questIndex = 1, entries do
-        local title, level, _, isHeader, _, isComplete, _, questId = GetQuestLogTitle(questIndex)
+        local title, level, isHeader, isComplete, questId = getQuestInfo(questIndex)
         if title and not isHeader then
             local questRecord = {
                 questKey = self:MakeQuestKey(title, level, questId),

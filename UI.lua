@@ -6,6 +6,7 @@ QB.UI = QB.UI or {}
 
 local UI = QB.UI
 local CreateFrame = _G.CreateFrame
+local BackdropTemplate = _G.BackdropTemplateMixin and "BackdropTemplate" or nil
 
 UI.frame = UI.frame or nil
 UI.rows = UI.rows or {}
@@ -35,6 +36,30 @@ local function formatQuestTitle(row)
         return string.format("[%d] %s", row.level, row.title)
     end
     return row.title
+end
+
+local function buildDropdownMenu(_, level)
+    local peers = QB.State:GetOrderedPeerNames(true)
+    if #peers == 0 then
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "No buddies"
+        info.checked = false
+        info.notCheckable = true
+        UIDropDownMenu_AddButton(info, level)
+        return
+    end
+
+    for _, name in ipairs(peers) do
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = name
+        info.checked = name == QB.State:GetFocusedBuddy()
+        info.func = function()
+            QB.State:SetFocusedBuddy(name)
+            QB.db.lastFocusedBuddy = name
+            QB:RefreshViews("focus-changed")
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
 end
 
 function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared)
@@ -75,7 +100,7 @@ function UI:Initialize()
 
     local windowState = QB:GetWindowState()
 
-    self.frame = CreateFrame("Frame", "QuestBuddyMainWindow", UIParent)
+    self.frame = CreateFrame("Frame", "QuestBuddyMainWindow", UIParent, BackdropTemplate)
     self.frame:SetWidth(windowState.width or 420)
     self.frame:SetHeight(windowState.height or 380)
     self.frame:SetPoint(windowState.point or "CENTER", UIParent, windowState.relativePoint or "CENTER", windowState.x or 0, windowState.y or 0)
@@ -143,29 +168,7 @@ function UI:Initialize()
     self.frame.content:SetHeight(1)
     self.frame.scroll:SetScrollChild(self.frame.content)
 
-    UIDropDownMenu_Initialize(self.frame.dropdown, function(_, level)
-        local peers = QB.State:GetOrderedPeerNames(true)
-        if #peers == 0 then
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "No buddies"
-            info.checked = false
-            info.notCheckable = true
-            UIDropDownMenu_AddButton(info, level)
-            return
-        end
-
-        for _, name in ipairs(peers) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = name
-            info.checked = name == QB.State:GetFocusedBuddy()
-            info.func = function()
-                QB.State:SetFocusedBuddy(name)
-                QB.db.lastFocusedBuddy = name
-                QB:RefreshViews("focus-changed")
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
+    UIDropDownMenu_Initialize(self.frame.dropdown, buildDropdownMenu)
 
     self.frame:Hide()
 end
@@ -243,29 +246,7 @@ function UI:Refresh(reason)
     local rows, buckets = UI.BuildDisplayRows(QB.State:GetLocalSnapshot(), peer, QB:GetOption("showOnlySharedQuests"))
     local statusColor = STATUS_COLORS[status] or STATUS_COLORS.Offline
 
-    UIDropDownMenu_Initialize(self.frame.dropdown, function(_, level)
-        local peers = QB.State:GetOrderedPeerNames(true)
-        if #peers == 0 then
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "No buddies"
-            info.checked = false
-            info.notCheckable = true
-            UIDropDownMenu_AddButton(info, level)
-            return
-        end
-
-        for _, name in ipairs(peers) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = name
-            info.checked = name == QB.State:GetFocusedBuddy()
-            info.func = function()
-                QB.State:SetFocusedBuddy(name)
-                QB.db.lastFocusedBuddy = name
-                QB:RefreshViews("focus-changed")
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
+    UIDropDownMenu_Initialize(self.frame.dropdown, buildDropdownMenu)
 
     UIDropDownMenu_SetText(self.frame.dropdown, focusedBuddy or "No buddy")
 

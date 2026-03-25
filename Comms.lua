@@ -10,30 +10,35 @@ Comms.incomingTransfers = Comms.incomingTransfers or {}
 Comms.pendingSnapshotTimer = Comms.pendingSnapshotTimer or nil
 Comms.lastSnapshotSentAt = Comms.lastSnapshotSentAt or 0
 Comms.transferSequence = Comms.transferSequence or 0
+Comms.TRANSFER_TIMEOUT_SECONDS = 8
 
 local function now()
     return QB.Compat:GetTime()
 end
 
 function Comms:Initialize()
+    QB.Compat:CancelTimer(self.pendingSnapshotTimer)
+    for _, transfer in pairs(self.incomingTransfers or {}) do
+        QB.Compat:CancelTimer(transfer.timeoutTimer)
+    end
     self.incomingTransfers = {}
     self.pendingSnapshotTimer = nil
     self.lastSnapshotSentAt = 0
 end
 
-function Comms:SendRaw(payload)
-    return QB.Compat:SendPartyAddonMessage(QB.Protocol.PREFIX, payload)
+function Comms:SendRaw(payload, distribution, target)
+    return QB.Compat:SendAddonMessage(QB.Protocol.PREFIX, payload, distribution or "PARTY", target)
 end
 
 function Comms:BroadcastHello()
     local snapshot = QB.State:GetLocalSnapshot()
     local revision = snapshot and snapshot.revision or 0
     local questCount = snapshot and #snapshot.quests or 0
-    self:SendRaw(QB.Protocol:EncodeHello(revision, questCount))
+    self:SendRaw(QB.Protocol:EncodeHello(revision, questCount), "PARTY")
 end
 
 function Comms:RequestSnapshots(reason)
-    self:SendRaw(QB.Protocol:EncodeSnapshotRequest("", reason or "manual"))
+    self:SendRaw(QB.Protocol:EncodeSnapshotRequest("", reason or "manual"), "PARTY")
 end
 
 function Comms:SendSnapshot(targetName)
@@ -42,18 +47,30 @@ function Comms:SendSnapshot(targetName)
         return false
     end
 
-    local serialized = QB.Snapshot:Serialize(snapshot, true)
-    local chunks = QB.Snapshot:ChunkString(serialized, QB.Protocol.MAX_CHUNK_SIZE)
-    local checksum = QB.Snapshot:Checksum(serialized)
-
     self.transferSequence = self.transferSequence + 1
     local transferId = string.format("%s-%d-%d", QB.PartyApi:GetPlayerName(), snapshot.revision or 0, self.transferSequence)
+    local serialized = QB.Snapshot:Serialize(snapshot, true)
+    local checksum = QB.Snapshot:Checksum(serialized)
+    local chunkSize = QB.Protocol:GetMaxChunkDataSize(transferId, 1)
+    local chunks = {}
 
-    self:SendRaw(QB.Protocol:EncodeSnapshotStart(transferId, snapshot.revision, #chunks, checksum, string.len(serialized)))
-    for index, chunk in ipairs(chunks) do
-        self:SendRaw(QB.Protocol:EncodeSnapshotChunk(transferId, index, chunk))
+    while true do
+        chunks = QB.Snapshot:ChunkString(serialized, chunkSize)
+        local nextChunkSize = QB.Protocol:GetMaxChunkDataSize(transferId, #chunks)
+        if nextChunkSize == chunkSize then
+            break
+        end
+        chunkSize = nextChunkSize
     end
-    self:SendRaw(QB.Protocol:EncodeSnapshotEnd(transferId, snapshot.revision, checksum))
+
+    local distribution = targetName and "WHISPER" or "PARTY"
+    local target = targetName or nil
+
+    self:SendRaw(QB.Protocol:EncodeSnapshotStart(transferId, snapshot.revision, #chunks, checksum, string.len(serialized)), distribution, target)
+    for index, chunk in ipairs(chunks) do
+        self:SendRaw(QB.Protocol:EncodeSnapshotChunk(transferId, index, chunk), distribution, target)
+    end
+    self:SendRaw(QB.Protocol:EncodeSnapshotEnd(transferId, snapshot.revision, checksum), distribution, target)
 
     self.lastSnapshotSentAt = now()
     return true
@@ -76,7 +93,7 @@ function Comms:QueueSnapshotBroadcast(reason)
 end
 
 function Comms:SendGoodbye()
-    self:SendRaw(QB.Protocol:EncodeGoodbye())
+    self:SendRaw(QB.Protocol:EncodeGoodbye(), "PARTY")
 end
 
 function Comms:HandleSnapshotRequest(sender, fields)
@@ -98,6 +115,11 @@ function Comms:HandleSnapshotStart(sender, fields)
         return
     end
 
+    local activeTransfer = self.incomingTransfers[sender]
+    if activeTransfer then
+        QB.Compat:CancelTimer(activeTransfer.timeoutTimer)
+    end
+
     self.incomingTransfers[sender] = {
         transferId = transferId,
         revision = revision,
@@ -108,6 +130,16 @@ function Comms:HandleSnapshotStart(sender, fields)
         received = 0,
         startedAt = now(),
     }
+    self.incomingTransfers[sender].timeoutTimer = QB.Compat:After(self.TRANSFER_TIMEOUT_SECONDS, function(expectedSender, expectedTransferId)
+        local timedOutTransfer = self.incomingTransfers[expectedSender]
+        if timedOutTransfer and timedOutTransfer.transferId == expectedTransferId then
+            self.incomingTransfers[expectedSender] = nil
+            QB.State:SetPeerUpdating(expectedSender, false)
+            if QB and QB.RefreshViews then
+                QB:RefreshViews("peer-timeout")
+            end
+        end
+    end, sender, transferId)
     QB.State:SetPeerUpdating(sender, true)
 end
 
@@ -133,6 +165,8 @@ function Comms:HandleSnapshotEnd(sender, fields)
     if not transfer or fields[1] ~= transfer.transferId then
         return
     end
+
+    QB.Compat:CancelTimer(transfer.timeoutTimer)
 
     local revision = tonumber(fields[2]) or 0
     local checksum = tonumber(fields[3]) or 0
@@ -182,7 +216,7 @@ function Comms:OnAddonMessage(prefix, payload, channel, sender)
     if decoded.type == "HELLO" then
         QB.State:MarkPeerHello(sender, decoded.fields[1], currentTime)
         if not QB.State:GetPeer(sender).snapshot or tonumber(decoded.fields[1]) ~= (QB.State:GetPeer(sender).revision or 0) then
-            self:SendRaw(QB.Protocol:EncodeSnapshotRequest(sender, "hello"))
+            self:SendRaw(QB.Protocol:EncodeSnapshotRequest(sender, "hello"), "WHISPER", sender)
         end
     elseif decoded.type == "SNAPSHOT_REQUEST" then
         self:HandleSnapshotRequest(sender, decoded.fields)

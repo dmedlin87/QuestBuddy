@@ -7,6 +7,7 @@ QB.Tracker = QB.Tracker or {}
 
 local Tracker = QB.Tracker
 local CreateFrame = _G.CreateFrame
+local BackdropTemplate = _G.BackdropTemplateMixin and "BackdropTemplate" or nil
 
 Tracker.frame = Tracker.frame or nil
 Tracker.rows = Tracker.rows or {}
@@ -73,7 +74,7 @@ function Tracker:Initialize()
         return
     end
 
-    self.frame = CreateFrame("Frame", "QuestBuddyTrackerOverlay", UIParent)
+    self.frame = CreateFrame("Frame", "QuestBuddyTrackerOverlay", UIParent, BackdropTemplate)
     self.frame:SetWidth(280)
     self.frame:SetHeight(24)
     applyBackdrop(self.frame)

@@ -8,7 +8,7 @@ local Protocol = QB.Protocol
 
 Protocol.PREFIX = "QuestBuddy"
 Protocol.VERSION = "1"
-Protocol.MAX_CHUNK_SIZE = 220
+Protocol.MAX_MESSAGE_SIZE = 255
 
 local function encodeNetField(value)
     value = tostring(value or "")
@@ -52,6 +52,10 @@ function Protocol:Encode(messageType, fields)
     end
 
     return table.concat({ self.VERSION, messageType, table.concat(encodedFields, "") }, "|")
+end
+
+function Protocol:GetEncodedLength(messageType, fields)
+    return string.len(self:Encode(messageType, fields))
 end
 
 function Protocol:Decode(message)
@@ -109,4 +113,26 @@ end
 
 function Protocol:EncodeGoodbye()
     return self:Encode("GOODBYE", {})
+end
+
+function Protocol:GetMaxChunkDataSize(transferId, chunkCountHint)
+    local digits = string.len(tostring(chunkCountHint or 1))
+    local chunkIndex = string.rep("9", math.max(1, digits))
+    local low = 1
+    local high = self.MAX_MESSAGE_SIZE
+    local best = 1
+
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        local encodedLength = self:GetEncodedLength("SNAPSHOT_CHUNK", { transferId or "", chunkIndex, string.rep("x", mid) })
+
+        if encodedLength <= self.MAX_MESSAGE_SIZE then
+            best = mid
+            low = mid + 1
+        else
+            high = mid - 1
+        end
+    end
+
+    return best
 end

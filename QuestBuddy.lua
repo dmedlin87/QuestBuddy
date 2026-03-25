@@ -43,7 +43,7 @@ function QB:GetWindowState()
 end
 
 function QB:RefreshViews(reason)
-    if self.State then
+    if self.State and self.db then
         self.db.lastFocusedBuddy = self.State:GetFocusedBuddy()
     end
     if self.Tracker and self.Tracker.Refresh then
@@ -73,7 +73,6 @@ function QB:HandlePartyRosterChange(reason)
 
     if self.Compat:IsInParty() then
         self.Comms:BroadcastHello()
-        self.Comms:RequestSnapshots(reason)
     end
 end
 
@@ -110,6 +109,9 @@ function QB:Initialize()
     self.UI:Initialize()
     self.Options:Initialize()
     self.Comms:Initialize()
+    if not self.Compat:RegisterAddonPrefix(self.Protocol.PREFIX) then
+        self.Compat:Printf("QuestBuddy: failed to register addon message prefix '%s'.", self.Protocol.PREFIX)
+    end
 
     SLASH_QUESTBUDDY1 = "/qb"
     SlashCmdList.QUESTBUDDY = function(message)
@@ -125,7 +127,7 @@ function QB:Initialize()
 
     self.frame:RegisterEvent("CHAT_MSG_ADDON")
     self.frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    self.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+    self.frame:RegisterEvent("GROUP_ROSTER_UPDATE")
     self.frame:RegisterEvent("QUEST_LOG_UPDATE")
     self.frame:RegisterEvent("QUEST_WATCH_UPDATE")
     self.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -148,7 +150,7 @@ function QB:OnEvent(event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" then
         self:HandleQuestLogChange("enter-world")
         self:HandlePartyRosterChange("enter-world")
-    elseif event == "PARTY_MEMBERS_CHANGED" then
+    elseif event == "PARTY_MEMBERS_CHANGED" or event == "GROUP_ROSTER_UPDATE" then
         self:HandlePartyRosterChange("party-changed")
     elseif event == "QUEST_LOG_UPDATE" then
         self:HandleQuestLogChange("quest-log")

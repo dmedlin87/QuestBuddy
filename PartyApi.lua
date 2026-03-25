@@ -6,7 +6,6 @@ _G.QuestBuddy = QB
 QB.PartyApi = QB.PartyApi or {}
 
 local PartyApi = QB.PartyApi
-local GetNumPartyMembers = _G.GetNumPartyMembers
 
 function PartyApi:GetPlayerName()
     if QB.Compat and QB.Compat.SafeUnitName then
@@ -21,7 +20,7 @@ function PartyApi:GetPeerNames()
         return peers
     end
 
-    local count = GetNumPartyMembers and GetNumPartyMembers() or 0
+    local count = QB.Compat:GetPartyMemberCount()
     for index = 1, count do
         local name = QB.Compat:SafeUnitName("party" .. index)
         if name then

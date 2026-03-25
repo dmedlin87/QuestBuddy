@@ -7,6 +7,7 @@ QB.Options = QB.Options or {}
 
 local Options = QB.Options
 local CreateFrame = _G.CreateFrame
+local Settings = _G.Settings
 local InterfaceOptionsFramePanelContainer = _G.InterfaceOptionsFramePanelContainer
 local InterfaceOptions_AddCategory = _G.InterfaceOptions_AddCategory
 local InterfaceOptionsFrame_OpenToCategory = _G.InterfaceOptionsFrame_OpenToCategory
@@ -115,13 +116,26 @@ function Options:Initialize()
         panel.timeoutBox:SetText(tostring(QB:GetOption("staleTimeoutSeconds") or 90))
     end)
 
-    InterfaceOptions_AddCategory(self.panel)
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        self.category = Settings.RegisterCanvasLayoutCategory(self.panel, "QuestBuddy")
+        Settings.RegisterAddOnCategory(self.category)
+    elseif InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(self.panel)
+    end
 end
 
 function Options:Open()
     if not self.panel then
         return
     end
-    InterfaceOptionsFrame_OpenToCategory(self.panel)
-    InterfaceOptionsFrame_OpenToCategory(self.panel)
+
+    if Settings and Settings.OpenToCategory and self.category and self.category.ID then
+        Settings.OpenToCategory(self.category.ID)
+        return
+    end
+
+    if InterfaceOptionsFrame_OpenToCategory then
+        InterfaceOptionsFrame_OpenToCategory(self.panel)
+        InterfaceOptionsFrame_OpenToCategory(self.panel)
+    end
 end

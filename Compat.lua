@@ -9,9 +9,14 @@ local Compat = QB.Compat
 local unpack = table.unpack or unpack
 local GetTime = _G.GetTime
 local time = _G.time
+local C_ChatInfo = _G.C_ChatInfo
+local IsInGroup = _G.IsInGroup
+local IsInRaid = _G.IsInRaid
+local GetNumSubgroupMembers = _G.GetNumSubgroupMembers
 local GetNumPartyMembers = _G.GetNumPartyMembers
 local GetNumRaidMembers = _G.GetNumRaidMembers
 local SendAddonMessage = _G.SendAddonMessage
+local RegisterAddonMessagePrefix = _G.RegisterAddonMessagePrefix
 local UnitExists = _G.UnitExists
 local UnitName = _G.UnitName
 local UNKNOWN = _G.UNKNOWN
@@ -93,9 +98,23 @@ function Compat:CancelTimer(timerId)
 end
 
 function Compat:IsInParty()
+    if IsInGroup and IsInRaid then
+        return IsInGroup() and not IsInRaid()
+    end
+
     local partyCount = GetNumPartyMembers and GetNumPartyMembers() or 0
     local raidCount = GetNumRaidMembers and GetNumRaidMembers() or 0
     return partyCount > 0 and raidCount == 0
+end
+
+function Compat:GetPartyMemberCount()
+    if GetNumSubgroupMembers then
+        return GetNumSubgroupMembers()
+    end
+    if GetNumPartyMembers then
+        return GetNumPartyMembers()
+    end
+    return 0
 end
 
 function Compat:SafeUnitName(unit)
@@ -103,9 +122,13 @@ function Compat:SafeUnitName(unit)
         return nil
     end
 
-    local name = UnitName(unit)
+    local name, realm = UnitName(unit)
     if not name or name == UNKNOWN then
         return nil
+    end
+
+    if realm and realm ~= "" then
+        return string.format("%s-%s", name, realm)
     end
 
     return name
@@ -141,15 +164,47 @@ function Compat:MergeDefaults(target, defaults)
     return target
 end
 
-function Compat:SendPartyAddonMessage(prefix, payload)
-    if not prefix or not payload or payload == "" or not self:IsInParty() then
+function Compat:RegisterAddonPrefix(prefix)
+    if not prefix or prefix == "" then
         return false
+    end
+
+    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+        return C_ChatInfo.RegisterAddonMessagePrefix(prefix) and true or false
+    end
+    if RegisterAddonMessagePrefix then
+        return RegisterAddonMessagePrefix(prefix) and true or false
+    end
+
+    return false
+end
+
+function Compat:SendAddonMessage(prefix, payload, distribution, target)
+    if not prefix or not payload or payload == "" then
+        return false
+    end
+
+    if distribution == "WHISPER" then
+        if not target or target == "" then
+            return false
+        end
+    elseif distribution == "PARTY" then
+        if not self:IsInParty() then
+            return false
+        end
+    else
+        return false
+    end
+
+    if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+        C_ChatInfo.SendAddonMessage(prefix, payload, distribution, target)
+        return true
     end
     if not SendAddonMessage then
         return false
     end
 
-    SendAddonMessage(prefix, payload, "PARTY")
+    SendAddonMessage(prefix, payload, distribution, target)
     return true
 end
 
