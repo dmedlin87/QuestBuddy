@@ -120,6 +120,8 @@ function frameMethods:GetChecked()
     return self.checked
 end
 
+local selectedQuestLogIndex = nil
+
 local function newFrame(frameType, name, parent, template)
     local frame = {
         frameType = frameType,
@@ -169,6 +171,7 @@ local function resetTestEnvironment()
             },
         },
     }
+    selectedQuestLogIndex = nil
 end
 
 resetTestEnvironment()
@@ -329,25 +332,49 @@ _G.C_QuestLog = {
 }
 
 _G.GetNumQuestLogEntries = function()
-    return #(_G.__questLog or {})
+    local quests = 0
+
+    for _, quest in ipairs(_G.__questLog or {}) do
+        if not quest.isHeader then
+            quests = quests + 1
+        end
+    end
+
+    local visibleEntries = 0
+    for _, quest in ipairs(_G.__questLog or {}) do
+        if quest.isHeader then
+            visibleEntries = visibleEntries + 1
+        elseif not quest.headerIndex or not (_G.__questLog[quest.headerIndex] and _G.__questLog[quest.headerIndex].isCollapsed) then
+            visibleEntries = visibleEntries + 1
+        end
+    end
+
+    return visibleEntries, quests
 end
 
 _G.GetQuestLogTitle = function(index)
-    local quest = (_G.__questLog or {})[index]
-    if not quest then
-        return nil
+    local visibleIndex = 0
+
+    for actualIndex, quest in ipairs(_G.__questLog or {}) do
+        local hiddenByHeader = quest.headerIndex and (_G.__questLog[quest.headerIndex] and _G.__questLog[quest.headerIndex].isCollapsed)
+        if quest.isHeader or not hiddenByHeader then
+            visibleIndex = visibleIndex + 1
+            if visibleIndex == index then
+                return quest.title, quest.level, nil, quest.isHeader, quest.isCollapsed, quest.isComplete, nil, quest.questID, nil, nil, nil, nil, nil, nil, nil, quest.isHidden
+            end
+        end
     end
 
-    return quest.title, quest.level, nil, quest.isHeader, nil, quest.isComplete, nil, quest.questID
+    return nil
 end
 
 _G.GetNumQuestLeaderBoards = function(index)
-    local quest = (_G.__questLog or {})[index]
+    local quest = (_G.__questLog or {})[selectedQuestLogIndex or index]
     return #(quest and quest.objectives or {})
 end
 
 _G.GetQuestLogLeaderBoard = function(objectiveIndex, questIndex)
-    local quest = (_G.__questLog or {})[questIndex]
+    local quest = (_G.__questLog or {})[selectedQuestLogIndex or questIndex]
     local objective = quest and quest.objectives and quest.objectives[objectiveIndex] or nil
     if not objective then
         return nil
@@ -357,8 +384,50 @@ _G.GetQuestLogLeaderBoard = function(objectiveIndex, questIndex)
 end
 
 _G.IsQuestWatched = function(index)
+    local visibleIndex = 0
+
+    for _, quest in ipairs(_G.__questLog or {}) do
+        local hiddenByHeader = quest.headerIndex and (_G.__questLog[quest.headerIndex] and _G.__questLog[quest.headerIndex].isCollapsed)
+        if quest.isHeader or not hiddenByHeader then
+            visibleIndex = visibleIndex + 1
+            if visibleIndex == index then
+                return quest and quest.watched or false
+            end
+        end
+    end
+
+    return false
+end
+
+_G.SelectQuestLogEntry = function(index)
+    selectedQuestLogIndex = index
+end
+
+_G.GetQuestLogSelection = function()
+    return selectedQuestLogIndex
+end
+
+_G.ExpandQuestHeader = function(index)
+    if index == 0 then
+        for _, quest in ipairs(_G.__questLog or {}) do
+            if quest.isHeader then
+                quest.isCollapsed = false
+            end
+        end
+        return
+    end
+
     local quest = (_G.__questLog or {})[index]
-    return quest and quest.watched or false
+    if quest and quest.isHeader then
+        quest.isCollapsed = false
+    end
+end
+
+_G.CollapseQuestHeader = function(index)
+    local quest = (_G.__questLog or {})[index]
+    if quest and quest.isHeader then
+        quest.isCollapsed = true
+    end
 end
 
 local function loadModule(path)
@@ -425,6 +494,17 @@ local function makeQuest(key, title, level, watched, status, objectives, updated
         updated = updated or 1,
         objectives = objectives or {},
     }
+end
+
+local function readFile(path)
+    local handle, openError = io.open(path, "rb")
+    if not handle then
+        error(openError)
+    end
+
+    local contents = handle:read("*a")
+    handle:close()
+    return contents
 end
 
 local function resetAddonState()
@@ -571,6 +651,103 @@ local function testPartyJoinLeaveBehavior()
     expectEquals(QB.State:GetFocusedBuddy(), "Alice", "focus falls back to active peer")
 end
 
+local function testSimulatedBuddyUsesLocalQuests()
+    QB.State:Initialize({ lastFocusedBuddy = "Alice" })
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me", 3, {
+        makeQuest("shared", "Shared Quest", 10, true, "active", {
+            { text = "Apples: 2/6", current = 2, required = 6, done = false },
+        }, 30),
+        makeQuest("ready", "Ready Quest", 11, false, "ready", {
+            { text = "Speak with the scout", current = nil, required = nil, done = true },
+        }, 30),
+    })
+
+    local enabled = QB.State:ToggleSimulatedPeer(45)
+    local simulatedName = QB.State:GetSimulatedPeerName()
+    local simulatedPeer = QB.State:GetPeer(simulatedName)
+
+    expectEquals(enabled, true, "simulation toggles on")
+    expectEquals(simulatedName, "Simulated Buddy", "simulation uses the expected peer name")
+    expectTrue(simulatedPeer ~= nil, "simulation creates a peer")
+    expectEquals(QB.State:GetFocusedBuddy(), simulatedName, "simulation becomes focused buddy")
+    expectEquals(#simulatedPeer.snapshot.quests, 2, "simulation reuses the local quest list")
+    expectEquals(simulatedPeer.snapshot.quests[1].questKey, "shared", "simulation preserves quest identity")
+    expectTrue(simulatedPeer.snapshot.quests[1].objectives[1].current ~= 2 or simulatedPeer.snapshot.quests[1].status ~= "active", "simulation changes quest progress details")
+
+    QB.State:PrunePeers({}, 50)
+    expectEquals(QB.State:GetPeer(simulatedName).online, true, "simulation peer survives party pruning")
+
+    local disabled = QB.State:ToggleSimulatedPeer(51)
+    expectEquals(disabled, false, "simulation toggles off")
+    expectEquals(QB.State:GetPeer(simulatedName), nil, "simulation peer is removed when cleared")
+end
+
+local function testRefreshViewsDoesNotPersistSimulatedFocus()
+    resetAddonState()
+    QB.State:Initialize({ lastFocusedBuddy = "Alice" })
+    QB.db = QB.Compat:MergeDefaults({ lastFocusedBuddy = "Alice" }, QB.defaults)
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me", 1, {
+        makeQuest("id:1", "Quest", 10, true, "active", {}, 1),
+    })
+
+    QB.State:ToggleSimulatedPeer(10)
+    QB:RefreshViews("test-simulated-focus")
+
+    expectEquals(QB.db.lastFocusedBuddy, "Alice", "simulated focus does not overwrite persisted buddy selection")
+end
+
+local function testMainWindowSimulationButtonToggles()
+    resetAddonState()
+    QB:OnEvent("ADDON_LOADED", "QuestBuddy")
+
+    expectEquals(QB.UI.frame.simulateButton:GetText(), "Simulate", "main window starts with simulate button label")
+
+    QB.UI.frame.simulateButton:GetScript("OnClick")()
+    expectEquals(QB.State:GetSimulatedPeerName(), "Simulated Buddy", "simulate button creates the simulated peer")
+    expectEquals(QB.UI.frame.simulateButton:GetText(), "Clear Sim", "simulate button updates label after enabling")
+
+    QB.UI.frame.simulateButton:GetScript("OnClick")()
+    expectEquals(QB.State:GetSimulatedPeerName(), nil, "simulate button clears the simulated peer")
+    expectEquals(QB.UI.frame.simulateButton:GetText(), "Simulate", "simulate button restores label after clearing")
+end
+
+local function testSimulationRefreshesLocalSnapshotBeforeBuildingPeer()
+    resetAddonState()
+    QB.State:Initialize({})
+    QB.db = QB.Compat:MergeDefaults({}, QB.defaults)
+
+    local refreshCalls = 0
+    local originalRefreshLocalSnapshot = QB.State.RefreshLocalSnapshot
+
+    QB.State.RefreshLocalSnapshot = function(state, now)
+        refreshCalls = refreshCalls + 1
+        state:GetSession().localSnapshot = makeSnapshot("Me", 7, {
+            makeQuest("id:77", "Fresh Quest", 12, true, "active", {
+                { text = "Items: 1/3", current = 1, required = 3, done = false },
+            }, now),
+        })
+        return true, state:GetSession().localSnapshot
+    end
+
+    QB:ToggleSimulationBuddy()
+
+    QB.State.RefreshLocalSnapshot = originalRefreshLocalSnapshot
+
+    expectEquals(refreshCalls, 1, "simulation refreshes the local snapshot before building the peer")
+    expectEquals(QB.State:GetPeer("Simulated Buddy").snapshot.quests[1].questKey, "id:77", "simulation uses refreshed local quest data")
+end
+
+local function testSimulatedEmptyStateExplainsMissingLocalQuests()
+    resetAddonState()
+    QB:OnEvent("ADDON_LOADED", "QuestBuddy")
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me", 1, {})
+
+    QB.State:CreateSimulatedPeer(10)
+    QB.UI:Refresh("test-empty-sim")
+
+    expectEquals(QB.UI.rows[1].header.text, "No local quests found to simulate", "simulated empty state explains missing local quest data")
+end
+
 local function testRefreshLocalSnapshotIgnoresUpdatedOnlyChanges()
     QB.State:Initialize({})
     local originalBuildLocalSnapshot = QB.QuestApi.BuildLocalSnapshot
@@ -672,6 +849,77 @@ local function testQuestApiBuildsRetailSnapshot()
     expectEquals(snapshot.quests[1].objectives[1].required, 4, "retail snapshot reads required objective progress")
 end
 
+local function testQuestApiFallsBackWhenRetailQuestLogIsEmpty()
+    local originalRetailQuestLog = _G.C_QuestLog
+
+    _G.C_QuestLog = {
+        GetNumQuestLogEntries = function()
+            return 0
+        end,
+        GetInfo = function()
+            return nil
+        end,
+        GetQuestObjectives = function()
+            return {}
+        end,
+    }
+
+    loadModule("QuestApi.lua")
+
+    local snapshot = QB.QuestApi:BuildLocalSnapshot(44)
+
+    expectEquals(#snapshot.quests, 1, "quest api falls back to legacy entry count when retail returns zero")
+    expectEquals(snapshot.quests[1].title, "Training Day", "quest api falls back to legacy quest info when retail returns nil")
+
+    _G.C_QuestLog = originalRetailQuestLog
+    loadModule("QuestApi.lua")
+end
+
+local function testQuestApiExpandsCollapsedLegacyHeaders()
+    local originalRetailQuestLog = _G.C_QuestLog
+
+    _G.C_QuestLog = nil
+    loadModule("QuestApi.lua")
+
+    _G.__questLog = {
+        {
+            title = "Elwynn Forest",
+            level = 0,
+            questID = 0,
+            isHeader = true,
+            isCollapsed = true,
+            objectives = {},
+        },
+        {
+            title = "Hidden Quest",
+            level = 9,
+            questID = 205,
+            isHeader = false,
+            isComplete = false,
+            watched = true,
+            headerIndex = 1,
+            objectives = {
+                {
+                    text = "Bandanas: 2/8",
+                    numFulfilled = 2,
+                    numRequired = 8,
+                    finished = false,
+                    type = "item",
+                },
+            },
+        },
+    }
+
+    local snapshot = QB.QuestApi:BuildLocalSnapshot(55)
+
+    expectEquals(#snapshot.quests, 1, "quest api expands collapsed legacy headers to find hidden quests")
+    expectEquals(snapshot.quests[1].title, "Hidden Quest", "quest api captures quests under collapsed headers")
+    expectEquals(_G.__questLog[1].isCollapsed, true, "quest api restores collapsed header state after reading")
+
+    _G.C_QuestLog = originalRetailQuestLog
+    loadModule("QuestApi.lua")
+end
+
 local function testAddonInitializesRetailRuntime()
     resetAddonState()
     QB:OnEvent("ADDON_LOADED", "QuestBuddy")
@@ -681,6 +929,37 @@ local function testAddonInitializesRetailRuntime()
     expectTrue(QB.frame.events["GROUP_ROSTER_UPDATE"] == true, "addon listens for retail group roster updates")
     expectTrue(QB.Options.category ~= nil, "addon registers a retail settings category")
     expectEquals(_G.__sentMessages[1].distribution, "PARTY", "initial roster sync still broadcasts to the party")
+end
+
+local function testOptionsInitializeWithoutTemplateTextRegion()
+    resetAddonState()
+
+    local originalCreateFrame = _G.CreateFrame
+    _G.CreateFrame = function(frameType, name, parent, template)
+        local frame = newFrame(frameType, name, parent, template)
+        if frameType == "CheckButton" and template == "InterfaceOptionsCheckButtonTemplate" then
+            frame.Text = nil
+        end
+        return frame
+    end
+
+    loadModule("Options.lua")
+    QB.Options:Initialize()
+
+    expectTrue(QB.Options.panel ~= nil, "options panel initializes when checkbox template omits Text")
+    expectTrue(QB.Options.panel.overlay ~= nil, "overlay checkbox is created without template text region")
+    expectEquals(QB.Options.panel.overlay.Text.text, "Enable tracker overlay", "options checkbox creates a fallback label region")
+
+    _G.CreateFrame = originalCreateFrame
+    loadModule("Options.lua")
+end
+
+local function testTocUsesSingleRetailInterfaceValue()
+    local toc = readFile("QuestBuddy.toc")
+    local interfaceLine = string.match(toc, "([^\r\n]+)")
+
+    expectEquals(interfaceLine, "## Interface: 120001, 110207", "toc declares supported retail interface versions")
+    expectTrue(string.find(toc, "## Interface: 120001, 110207", 1, true) ~= nil, "toc uses the comma-separated interface header WoW accepts")
 end
 
 local tests = {
@@ -694,12 +973,21 @@ local tests = {
     testTrackerRenderingDecisions,
     testMainWindowRowBuilding,
     testPartyJoinLeaveBehavior,
+    testSimulatedBuddyUsesLocalQuests,
+    testRefreshViewsDoesNotPersistSimulatedFocus,
+    testMainWindowSimulationButtonToggles,
+    testSimulationRefreshesLocalSnapshotBeforeBuildingPeer,
+    testSimulatedEmptyStateExplainsMissingLocalQuests,
     testRefreshLocalSnapshotIgnoresUpdatedOnlyChanges,
     testSendSnapshotUsesWhisperAndBoundedChunks,
     testHelloRequestUsesWhisper,
     testSnapshotTransferTimeoutClearsUpdatingState,
     testQuestApiBuildsRetailSnapshot,
+    testQuestApiFallsBackWhenRetailQuestLogIsEmpty,
+    testQuestApiExpandsCollapsedLegacyHeaders,
     testAddonInitializesRetailRuntime,
+    testOptionsInitializeWithoutTemplateTextRegion,
+    testTocUsesSingleRetailInterfaceValue,
 }
 
 for _, test in ipairs(tests) do

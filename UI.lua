@@ -55,10 +55,24 @@ local function buildDropdownMenu(_, level)
         info.checked = name == QB.State:GetFocusedBuddy()
         info.func = function()
             QB.State:SetFocusedBuddy(name)
-            QB.db.lastFocusedBuddy = name
+            if not QB.State:IsSimulatedPeer(name) then
+                QB.db.lastFocusedBuddy = name
+            end
             QB:RefreshViews("focus-changed")
         end
         UIDropDownMenu_AddButton(info, level)
+    end
+end
+
+local function updateSimulationButton(button)
+    if not button then
+        return
+    end
+
+    if QB.State:GetSimulatedPeerName() then
+        button:SetText("Clear Sim")
+    else
+        button:SetText("Simulate")
     end
 end
 
@@ -151,13 +165,22 @@ function UI:Initialize()
     self.frame.countsText:SetJustifyH("LEFT")
 
     self.frame.refreshButton = CreateFrame("Button", nil, self.frame, "UIPanelButtonTemplate")
-    self.frame.refreshButton:SetWidth(70)
+    self.frame.refreshButton:SetWidth(64)
     self.frame.refreshButton:SetHeight(20)
     self.frame.refreshButton:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -16, -44)
     self.frame.refreshButton:SetText("Refresh")
     self.frame.refreshButton:SetScript("OnClick", function()
         QB:ManualRefresh()
     end)
+
+    self.frame.simulateButton = CreateFrame("Button", nil, self.frame, "UIPanelButtonTemplate")
+    self.frame.simulateButton:SetWidth(78)
+    self.frame.simulateButton:SetHeight(20)
+    self.frame.simulateButton:SetPoint("RIGHT", self.frame.refreshButton, "LEFT", -8, 0)
+    self.frame.simulateButton:SetScript("OnClick", function()
+        QB:ToggleSimulationBuddy()
+    end)
+    updateSimulationButton(self.frame.simulateButton)
 
     self.frame.scroll = CreateFrame("ScrollFrame", "QuestBuddyMainScroll", self.frame, "UIPanelScrollFrameTemplate")
     self.frame.scroll:SetPoint("TOPLEFT", self.frame.countsText, "BOTTOMLEFT", 0, -12)
@@ -247,6 +270,7 @@ function UI:Refresh(reason)
     local statusColor = STATUS_COLORS[status] or STATUS_COLORS.Offline
 
     UIDropDownMenu_Initialize(self.frame.dropdown, buildDropdownMenu)
+    updateSimulationButton(self.frame.simulateButton)
 
     UIDropDownMenu_SetText(self.frame.dropdown, focusedBuddy or "No buddy")
 
@@ -264,10 +288,16 @@ function UI:Refresh(reason)
     ))
 
     if #rows == 0 then
+        local emptyText = focusedBuddy and "No quest rows yet" or "Join a party with another QuestBuddy user"
+
+        if focusedBuddy and QB.State:IsSimulatedPeer(focusedBuddy) then
+            emptyText = "No local quests found to simulate"
+        end
+
         rows = {
             {
                 kind = "header",
-                text = focusedBuddy and "No quest rows yet" or "Join a party with another QuestBuddy user",
+                text = emptyText,
             },
         }
     end

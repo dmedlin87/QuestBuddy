@@ -44,7 +44,10 @@ end
 
 function QB:RefreshViews(reason)
     if self.State and self.db then
-        self.db.lastFocusedBuddy = self.State:GetFocusedBuddy()
+        local focusedBuddy = self.State:GetFocusedBuddy()
+        if focusedBuddy and not self.State:IsSimulatedPeer(focusedBuddy) then
+            self.db.lastFocusedBuddy = focusedBuddy
+        end
     end
     if self.Tracker and self.Tracker.Refresh then
         self.Tracker:Refresh(reason)
@@ -55,7 +58,13 @@ function QB:RefreshViews(reason)
 end
 
 function QB:HandleQuestLogChange(reason)
-    local changed = self.State:RefreshLocalSnapshot(self.Compat:GetTime())
+    local currentTime = self.Compat:GetTime()
+
+    if self.QuestApi and self.QuestApi.ShouldIgnoreQuestLogUpdate and self.QuestApi:ShouldIgnoreQuestLogUpdate(currentTime) then
+        return
+    end
+
+    local changed = self.State:RefreshLocalSnapshot(currentTime)
     self.State:ReevaluateFocus(self.db)
     self:RefreshViews(reason)
 
@@ -93,6 +102,20 @@ function QB:ManualRefresh()
     self.Comms:RequestSnapshots("manual")
     self.Comms:QueueSnapshotBroadcast("manual")
     self:RefreshViews("manual-refresh")
+end
+
+function QB:ToggleSimulationBuddy()
+    local currentTime = self.Compat:GetTime()
+
+    if not self.State:GetSimulatedPeerName() then
+        self.State:RefreshLocalSnapshot(currentTime)
+    end
+
+    local enabled = self.State:ToggleSimulatedPeer(currentTime)
+    if not enabled then
+        self.State:ReevaluateFocus(self.db)
+    end
+    self:RefreshViews(enabled and "simulate-on" or "simulate-off")
 end
 
 function QB:Initialize()

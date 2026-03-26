@@ -14,10 +14,34 @@ local InterfaceOptionsFrame_OpenToCategory = _G.InterfaceOptionsFrame_OpenToCate
 
 Options.panel = Options.panel or nil
 
+local function getCheckboxLabelRegion(checkbox)
+    if checkbox.Text then
+        return checkbox.Text
+    end
+
+    local checkboxName = checkbox.GetName and checkbox:GetName() or checkbox.name
+    if checkboxName and _G[checkboxName .. "Text"] then
+        checkbox.Text = _G[checkboxName .. "Text"]
+        return checkbox.Text
+    end
+
+    if checkbox.CreateFontString then
+        local textRegion = checkbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        textRegion:SetPoint("LEFT", checkbox, "RIGHT", 0, 1)
+        checkbox.Text = textRegion
+        return textRegion
+    end
+
+    return nil
+end
+
 local function createCheckbox(parent, label, description, x, y, getter, setter)
     local checkbox = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
     checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    checkbox.Text:SetText(label)
+    local textRegion = getCheckboxLabelRegion(checkbox)
+    if textRegion and textRegion.SetText then
+        textRegion:SetText(label)
+    end
     checkbox.tooltipText = description
     checkbox:SetScript("OnClick", function(self)
         setter(self:GetChecked() and true or false)

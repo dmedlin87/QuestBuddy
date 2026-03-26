@@ -12,6 +12,110 @@ local GetQuestLogTitle = _G.GetQuestLogTitle
 local GetNumQuestLeaderBoards = _G.GetNumQuestLeaderBoards
 local GetQuestLogLeaderBoard = _G.GetQuestLogLeaderBoard
 local IsQuestWatched = _G.IsQuestWatched
+local ExpandQuestHeader = _G.ExpandQuestHeader
+local CollapseQuestHeader = _G.CollapseQuestHeader
+local SelectQuestLogEntry = _G.SelectQuestLogEntry
+local GetQuestLogSelection = _G.GetQuestLogSelection
+
+QuestApi.questLogMutationDepth = QuestApi.questLogMutationDepth or 0
+QuestApi.suppressQuestLogUpdatesUntil = QuestApi.suppressQuestLogUpdatesUntil or 0
+
+function QuestApi:BeginQuestLogMutation()
+    self.questLogMutationDepth = (self.questLogMutationDepth or 0) + 1
+end
+
+function QuestApi:EndQuestLogMutation(now)
+    self.questLogMutationDepth = math.max((self.questLogMutationDepth or 0) - 1, 0)
+    self.suppressQuestLogUpdatesUntil = math.max(self.suppressQuestLogUpdatesUntil or 0, (now or 0) + 0.1)
+end
+
+function QuestApi:ShouldIgnoreQuestLogUpdate(now)
+    if (self.questLogMutationDepth or 0) > 0 then
+        return true
+    end
+
+    return (now or 0) <= (self.suppressQuestLogUpdatesUntil or 0)
+end
+
+local function getQuestLogCounts()
+    local retailEntries = nil
+
+    if C_QuestLog and C_QuestLog.GetNumQuestLogEntries then
+        retailEntries = C_QuestLog.GetNumQuestLogEntries()
+        if retailEntries and retailEntries > 0 then
+            return retailEntries, retailEntries
+        end
+    end
+
+    if GetNumQuestLogEntries then
+        local legacyEntries, legacyQuestCount = GetNumQuestLogEntries()
+        legacyEntries = legacyEntries or 0
+        legacyQuestCount = legacyQuestCount or legacyEntries
+
+        if legacyEntries > 0 or legacyQuestCount > 0 then
+            return legacyEntries, legacyQuestCount
+        end
+    end
+
+    return retailEntries or 0, retailEntries or 0
+end
+
+local function captureCollapsedHeaders(entryCount)
+    local collapsedHeaders = {}
+
+    if not GetQuestLogTitle then
+        return collapsedHeaders
+    end
+
+    for questIndex = 1, entryCount do
+        local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(questIndex)
+        if isHeader and isCollapsed then
+            table.insert(collapsedHeaders, questIndex)
+        end
+    end
+
+    return collapsedHeaders
+end
+
+local function restoreCollapsedHeaders(collapsedHeaders)
+    if not CollapseQuestHeader then
+        return
+    end
+
+    for index = #collapsedHeaders, 1, -1 do
+        CollapseQuestHeader(collapsedHeaders[index])
+    end
+end
+
+local function withExpandedLegacyHeaders(callback)
+    if not GetNumQuestLogEntries or not GetQuestLogTitle or not ExpandQuestHeader then
+        return callback()
+    end
+
+    local entryCount, questCount = getQuestLogCounts()
+    if questCount <= 0 or entryCount <= 0 then
+        return callback()
+    end
+
+    local collapsedHeaders = captureCollapsedHeaders(entryCount)
+    if #collapsedHeaders == 0 then
+        return callback()
+    end
+
+    QuestApi:BeginQuestLogMutation()
+    ExpandQuestHeader(0)
+
+    local ok, result = pcall(callback)
+
+    restoreCollapsedHeaders(collapsedHeaders)
+    QuestApi:EndQuestLogMutation(QB.Compat and QB.Compat:GetTime() or 0)
+
+    if not ok then
+        error(result)
+    end
+
+    return result
+end
 
 local function normalizeTitle(title)
     title = string.lower(title or "")
@@ -55,9 +159,12 @@ end
 local function getQuestInfo(questIndex)
     if C_QuestLog and C_QuestLog.GetInfo then
         local info = C_QuestLog.GetInfo(questIndex)
-        if info then
+        if info and info.title then
             return info.title, info.level, info.isHeader, info.isComplete, info.questID
         end
+    end
+
+    if not GetQuestLogTitle then
         return nil, nil, nil, nil, nil
     end
 
@@ -100,6 +207,10 @@ function QuestApi:BuildObjectives(questIndex)
         end
     end
 
+    if SelectQuestLogEntry then
+        SelectQuestLogEntry(questIndex)
+    end
+
     local objectiveCount = GetNumQuestLeaderBoards and GetNumQuestLeaderBoards(questIndex) or 0
 
     for objectiveIndex = 1, objectiveCount do
@@ -127,28 +238,31 @@ function QuestApi:BuildLocalSnapshot(now)
         quests = {},
     }
 
-    local entries = 0
-    if C_QuestLog and C_QuestLog.GetNumQuestLogEntries then
-        entries = C_QuestLog.GetNumQuestLogEntries() or 0
-    elseif GetNumQuestLogEntries then
-        entries = GetNumQuestLogEntries() or 0
-    end
+    local originalSelection = GetQuestLogSelection and GetQuestLogSelection() or nil
 
-    for questIndex = 1, entries do
-        local title, level, isHeader, isComplete, questId = getQuestInfo(questIndex)
-        if title and not isHeader then
-            local questRecord = {
-                questKey = self:MakeQuestKey(title, level, questId),
-                questId = tonumber(questId) or 0,
-                title = title,
-                level = tonumber(level) or 0,
-                status = self:NormalizeStatus(isComplete),
-                watched = IsQuestWatched and IsQuestWatched(questIndex) and true or false,
-                updated = now or 0,
-                objectives = self:BuildObjectives(questIndex),
-            }
-            table.insert(snapshot.quests, questRecord)
+    withExpandedLegacyHeaders(function()
+        local entries = getQuestLogCounts()
+
+        for questIndex = 1, entries do
+            local title, level, isHeader, isComplete, questId = getQuestInfo(questIndex)
+            if title and not isHeader then
+                local questRecord = {
+                    questKey = self:MakeQuestKey(title, level, questId),
+                    questId = tonumber(questId) or 0,
+                    title = title,
+                    level = tonumber(level) or 0,
+                    status = self:NormalizeStatus(isComplete),
+                    watched = IsQuestWatched and IsQuestWatched(questIndex) and true or false,
+                    updated = now or 0,
+                    objectives = self:BuildObjectives(questIndex),
+                }
+                table.insert(snapshot.quests, questRecord)
+            end
         end
+    end)
+
+    if SelectQuestLogEntry and originalSelection then
+        SelectQuestLogEntry(originalSelection)
     end
 
     table.sort(snapshot.quests, function(left, right)

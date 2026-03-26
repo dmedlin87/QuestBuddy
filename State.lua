@@ -5,8 +5,85 @@ _G.QuestBuddy = QB
 QB.State = QB.State or {}
 
 local State = QB.State
+local SIMULATED_BUDDY_NAME = "Simulated Buddy"
 
 State.session = State.session or nil
+
+local function clamp(value, minimum, maximum)
+    if value < minimum then
+        return minimum
+    end
+    if value > maximum then
+        return maximum
+    end
+    return value
+end
+
+local function buildSimulatedObjective(objective, questIndex, objectiveIndex, forceReady)
+    local simulated = QB.Compat:CopyTable(objective)
+    local current = tonumber(simulated.current)
+    local required = tonumber(simulated.required)
+
+    if forceReady then
+        if required and required > 0 then
+            simulated.current = required
+            simulated.required = required
+        elseif current ~= nil then
+            simulated.current = current
+        end
+        simulated.done = true
+        return simulated
+    end
+
+    if required and required > 0 then
+        local baseCurrent = current or 0
+        local offset = ((questIndex * 2) + objectiveIndex) % 3
+        local direction = ((questIndex + objectiveIndex) % 2 == 0) and 1 or -1
+        local fakeCurrent = clamp(baseCurrent + (offset * direction), 0, required)
+
+        if fakeCurrent == baseCurrent and required > 0 then
+            fakeCurrent = clamp(baseCurrent + (direction > 0 and 1 or -1), 0, required)
+        end
+
+        simulated.current = fakeCurrent
+        simulated.required = required
+        simulated.done = fakeCurrent >= required
+        return simulated
+    end
+
+    simulated.done = ((questIndex + objectiveIndex) % 3) == 0
+    return simulated
+end
+
+local function buildSimulatedQuest(quest, questIndex, now)
+    local simulated = QB.Compat:CopyTable(quest)
+    local forceReady = (questIndex % 4) == 0
+
+    simulated.updated = now or quest.updated or 0
+    simulated.status = forceReady and "ready" or "active"
+    simulated.objectives = simulated.objectives or {}
+
+    for objectiveIndex, objective in ipairs(simulated.objectives) do
+        simulated.objectives[objectiveIndex] = buildSimulatedObjective(objective, questIndex, objectiveIndex, forceReady)
+    end
+
+    return simulated
+end
+
+local function buildSimulatedSnapshot(localSnapshot, now)
+    local snapshot = {
+        player = SIMULATED_BUDDY_NAME,
+        revision = ((localSnapshot and localSnapshot.revision) or 0) + 1,
+        createdAt = now or 0,
+        quests = {},
+    }
+
+    for questIndex, quest in ipairs((localSnapshot and localSnapshot.quests) or {}) do
+        table.insert(snapshot.quests, buildSimulatedQuest(quest, questIndex, now))
+    end
+
+    return snapshot
+end
 
 function State:Initialize(options)
     self.session = {
@@ -15,6 +92,7 @@ function State:Initialize(options)
         localRevision = 0,
         peers = {},
         focusedBuddy = options and options.lastFocusedBuddy or nil,
+        simulatedPeerName = nil,
     }
 end
 
@@ -53,6 +131,15 @@ end
 function State:GetPeers()
     local session = self:GetSession()
     return session and session.peers or {}
+end
+
+function State:GetSimulatedPeerName()
+    local session = self:GetSession()
+    return session and session.simulatedPeerName or nil
+end
+
+function State:IsSimulatedPeer(name)
+    return name ~= nil and name == self:GetSimulatedPeerName()
 end
 
 function State:EnsurePeer(name)
@@ -111,7 +198,9 @@ end
 
 function State:PrunePeers(activePeerSet, now)
     for name, peer in pairs(self:GetPeers()) do
-        if not activePeerSet[name] then
+        if self:IsSimulatedPeer(name) then
+            peer.online = true
+        elseif not activePeerSet[name] then
             self:MarkPeerOffline(name, now)
         else
             peer.online = true
@@ -193,6 +282,53 @@ end
 
 function State:GetFocusedBuddy()
     return self:GetSession().focusedBuddy
+end
+
+function State:CreateSimulatedPeer(now)
+    local session = self:GetSession()
+    local snapshot = buildSimulatedSnapshot(session.localSnapshot, now)
+    local peer = self:EnsurePeer(SIMULATED_BUDDY_NAME)
+
+    peer.online = true
+    peer.updating = false
+    peer.lastSeen = now or 0
+    peer.lastUpdate = now or 0
+    peer.revision = snapshot.revision or 0
+    peer.helloRevision = peer.revision
+    peer.snapshot = snapshot
+
+    session.simulatedPeerName = SIMULATED_BUDDY_NAME
+    session.focusedBuddy = SIMULATED_BUDDY_NAME
+
+    return peer
+end
+
+function State:ClearSimulatedPeer()
+    local session = self:GetSession()
+    local simulatedPeerName = session.simulatedPeerName
+
+    if not simulatedPeerName then
+        return false
+    end
+
+    session.peers[simulatedPeerName] = nil
+    session.simulatedPeerName = nil
+
+    if session.focusedBuddy == simulatedPeerName then
+        session.focusedBuddy = nil
+    end
+
+    return true
+end
+
+function State:ToggleSimulatedPeer(now)
+    if self:GetSimulatedPeerName() then
+        self:ClearSimulatedPeer()
+        return false
+    end
+
+    self:CreateSimulatedPeer(now)
+    return true
 end
 
 function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared)
