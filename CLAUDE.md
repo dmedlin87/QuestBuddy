@@ -4,7 +4,7 @@ See [AGENTS.md](./AGENTS.md) for the primary agent handoff and repository guidan
 
 ## Project Overview
 
-QuestBuddy is a World of Warcraft (WoW) addon written in Lua 5.1. It enables party members to share and monitor each other's quest completion status in real time, with minimal performance overhead. It supports both modern Retail (Dragonflight 12.0+) and legacy (Wrath 11.0+) WoW clients.
+QuestBuddy is a World of Warcraft (WoW) addon written in Lua 5.1. It enables party members to share and monitor each other's quest completion status in real time, with minimal performance overhead. The addon manifest currently declares interface values `120001` and `110207`, and the compatibility layer covers alternate quest-log layouts exercised by the regression suite.
 
 ---
 
@@ -169,19 +169,21 @@ QB.defaults = {
 | `/qb` | Toggle main overview window |
 | `/qb refresh` | Request fresh snapshots from all buddies |
 | `/qb options` | Open Interface Options panel |
+| `/qb debug` | Print quest-log debug details to chat |
 
 ---
 
 ## Simulation / Debug Mode
 
-`State.lua` supports a simulated peer for UI development without a live party:
+`State.lua` supports a simulated peer for UI development or solo previewing without a live party. The main window exposes this via the `Simulate` / `Clear Sim` button.
 
 ```lua
-QB.State:EnableSimulatedBuddy("TestBuddy")  -- activate fake peer
-QB.State:DisableSimulatedBuddy()            -- remove fake peer
+QB.State:CreateSimulatedPeer(QB.Compat:GetTime())   -- create fake peer from local quests
+QB.State:ClearSimulatedPeer()                       -- remove fake peer
+QB.State:ToggleSimulatedPeer(QB.Compat:GetTime())   -- convenience toggle used by UI
 ```
 
-The simulated buddy generates realistic quest objectives and cycles through status states. Check `State.lua` for `simulatedPeerName` and related helpers.
+The simulated buddy generates realistic quest objectives and cycles through status states. `/qb debug` prints quest-log state to chat for troubleshooting. Check `State.lua` for `simulatedPeerName` and related helpers.
 
 ---
 

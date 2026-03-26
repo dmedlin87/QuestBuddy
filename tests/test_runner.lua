@@ -20,6 +20,19 @@ function frameMethods:SetScript(name, callback)
     self.scripts[name] = callback
 end
 
+function frameMethods:HookScript(name, callback)
+    local existing = self.scripts[name]
+    if not existing then
+        self.scripts[name] = callback
+        return
+    end
+
+    self.scripts[name] = function(...)
+        existing(...)
+        callback(...)
+    end
+end
+
 function frameMethods:GetScript(name)
     return self.scripts[name]
 end
@@ -112,6 +125,19 @@ function frameMethods:GetText()
     return self.text or ""
 end
 
+function frameMethods:GetName()
+    return self.name
+end
+
+function frameMethods:NumLines()
+    return #(self.leftLines or {})
+end
+
+function frameMethods:AddLine(text)
+    self.leftLines = self.leftLines or {}
+    table.insert(self.leftLines, text)
+end
+
 function frameMethods:SetChecked(value)
     self.checked = value and true or false
 end
@@ -172,6 +198,8 @@ local function resetTestEnvironment()
         },
     }
     selectedQuestLogIndex = nil
+    _G.GameTooltip = newFrame("GameTooltip", "GameTooltip", nil, nil)
+    _G.GameTooltip.leftLines = {}
 end
 
 resetTestEnvironment()
@@ -505,6 +533,14 @@ local function makeQuest(key, title, level, watched, status, objectives, updated
     }
 end
 
+local function setTooltipLines(tooltip, lines)
+    tooltip.leftLines = {}
+
+    for _, line in ipairs(lines or {}) do
+        table.insert(tooltip.leftLines, line)
+    end
+end
+
 local function readFile(path)
     local handle, openError = io.open(path, "rb")
     if not handle then
@@ -756,6 +792,30 @@ local function testSimulatedEmptyStateExplainsMissingLocalQuests()
     QB.UI:Refresh("test-empty-sim")
 
     expectEquals(QB.UI.rows[1].header.text, "No local quests found to simulate", "simulated empty state explains missing local quest data")
+end
+
+local function testTooltipShowsSimulatedBuddyQuestProgressForUnitTooltip()
+    resetAddonState()
+    QB:OnEvent("ADDON_LOADED", "QuestBuddy")
+
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me", 1, {
+        makeQuest("shared", "Shared Quest", 10, true, "active", {
+            { text = "Apples: 1/6", current = 1, required = 6, done = false },
+        }, 1),
+    })
+    QB.State:CreateSimulatedPeer(10)
+
+    setTooltipLines(_G.GameTooltip, {
+        "Hungry Wolf",
+        "Dead",
+        "Apples: 1/6",
+    })
+
+    _G.GameTooltip:GetScript("OnTooltipSetUnit")(_G.GameTooltip)
+
+    expectEquals(_G.GameTooltip.leftLines[4], " ", "tooltip inserts a spacer before QuestBuddy lines")
+    expectEquals(_G.GameTooltip.leftLines[5], "QuestBuddy: Simulated Buddy", "tooltip adds a QuestBuddy header for the focused simulated buddy")
+    expectEquals(_G.GameTooltip.leftLines[6], "Shared Quest: 2/6", "tooltip shows simulated buddy quest progress for matching quest NPC tooltips")
 end
 
 local function testRefreshLocalSnapshotIgnoresUpdatedOnlyChanges()
@@ -1085,6 +1145,7 @@ local tests = {
     testMainWindowSimulationButtonToggles,
     testSimulationRefreshesLocalSnapshotBeforeBuildingPeer,
     testSimulatedEmptyStateExplainsMissingLocalQuests,
+    testTooltipShowsSimulatedBuddyQuestProgressForUnitTooltip,
     testRefreshLocalSnapshotIgnoresUpdatedOnlyChanges,
     testSendSnapshotUsesWhisperAndBoundedChunks,
     testHelloRequestUsesWhisper,

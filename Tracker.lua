@@ -18,9 +18,91 @@ local STATUS_COLORS = {
     Stale = { r = 0.95, g = 0.56, b = 0.24 },
     Offline = { r = 0.62, g = 0.62, b = 0.62 },
 }
+local TOOLTIP_HEADER_PREFIX = "QuestBuddy: "
 
 local function getStatusColor(status)
     return STATUS_COLORS[status] or STATUS_COLORS.Offline
+end
+
+local function normalizeTooltipText(text)
+    text = tostring(text or "")
+    text = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
+    text = string.gsub(text, "|r", "")
+    text = string.gsub(text, "^%s+", "")
+    text = string.gsub(text, "%s+$", "")
+    text = string.gsub(text, "%s+", " ")
+    return string.lower(text)
+end
+
+local function getTooltipLineCount(tooltip)
+    if tooltip and tooltip.NumLines then
+        return tooltip:NumLines() or 0
+    end
+
+    return tooltip and tooltip.leftLines and #tooltip.leftLines or 0
+end
+
+local function getTooltipLineText(tooltip, index)
+    if not tooltip or not index then
+        return nil
+    end
+
+    if tooltip.leftLines and tooltip.leftLines[index] then
+        return tooltip.leftLines[index]
+    end
+
+    local tooltipName = tooltip.GetName and tooltip:GetName()
+    if not tooltipName then
+        return nil
+    end
+
+    local line = _G[tooltipName .. "TextLeft" .. index]
+    return line and line.GetText and line:GetText() or nil
+end
+
+local function tooltipContainsLine(tooltip, text)
+    local normalizedTarget = normalizeTooltipText(text)
+
+    for index = 1, getTooltipLineCount(tooltip) do
+        if normalizeTooltipText(getTooltipLineText(tooltip, index)) == normalizedTarget then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function collectTooltipQuestMatches(localSnapshot, tooltip)
+    local normalizedLines = {}
+    local matchedKeys = {}
+    local matches = {}
+
+    for index = 1, getTooltipLineCount(tooltip) do
+        local normalizedText = normalizeTooltipText(getTooltipLineText(tooltip, index))
+        if normalizedText ~= "" then
+            normalizedLines[normalizedText] = true
+        end
+    end
+
+    for _, quest in ipairs((localSnapshot and localSnapshot.quests) or {}) do
+        local matched = normalizedLines[normalizeTooltipText(quest.title)]
+
+        if not matched then
+            for _, objective in ipairs(quest.objectives or {}) do
+                if objective.text and objective.text ~= "" and normalizedLines[normalizeTooltipText(objective.text)] then
+                    matched = true
+                    break
+                end
+            end
+        end
+
+        if matched and not matchedKeys[quest.questKey] then
+            matchedKeys[quest.questKey] = true
+            table.insert(matches, quest)
+        end
+    end
+
+    return matches
 end
 
 local function applyBackdrop(frame)
@@ -69,7 +151,85 @@ function Tracker.BuildRows(localSnapshot, peer, status)
     return rows
 end
 
+function Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
+    local matches = collectTooltipQuestMatches(localSnapshot, tooltip)
+    local peerMap = QB.Snapshot:IndexByKey(peer and peer.snapshot or nil)
+    local lines = {}
+
+    for _, quest in ipairs(matches) do
+        local buddyQuest = peerMap[quest.questKey]
+        local buddyText
+
+        if status == "Stale" then
+            buddyText = "Stale"
+        elseif status == "Updating" then
+            buddyText = "Updating..."
+        elseif status == "Offline" then
+            buddyText = "Offline"
+        elseif buddyQuest then
+            buddyText = QB.Snapshot:SummarizeQuest(buddyQuest)
+        else
+            buddyText = "Buddy missing"
+        end
+
+        table.insert(lines, string.format("%s: %s", quest.title, buddyText))
+    end
+
+    return lines
+end
+
+function Tracker:AppendTooltipProgress(tooltip)
+    if not tooltip or not tooltip.AddLine then
+        return
+    end
+
+    local focusedBuddy = QB.State:GetFocusedBuddy()
+    if not focusedBuddy then
+        return
+    end
+
+    local localSnapshot = QB.State:GetLocalSnapshot()
+    local peer = QB.State:GetPeer(focusedBuddy)
+    local status = QB.State:GetPeerStatus(peer, QB.Compat:GetTime(), QB:GetOption("staleTimeoutSeconds"))
+    local headerText = TOOLTIP_HEADER_PREFIX .. focusedBuddy
+
+    if not localSnapshot or tooltipContainsLine(tooltip, headerText) then
+        return
+    end
+
+    local lines = Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
+    if #lines == 0 then
+        return
+    end
+
+    local statusColor = getStatusColor(status)
+    tooltip:AddLine(" ")
+    tooltip:AddLine(headerText, statusColor.r, statusColor.g, statusColor.b)
+
+    for _, line in ipairs(lines) do
+        tooltip:AddLine(line, 0.82, 0.82, 0.82, true)
+    end
+
+    if tooltip.Show then
+        tooltip:Show()
+    end
+end
+
+function Tracker:InitializeTooltip()
+    local tooltip = _G.GameTooltip
+    if not tooltip or tooltip.questBuddyHooked or not tooltip.HookScript then
+        return
+    end
+
+    tooltip:HookScript("OnTooltipSetUnit", function(frame)
+        Tracker:AppendTooltipProgress(frame)
+    end)
+    tooltip.questBuddyHooked = true
+end
+
 function Tracker:Initialize()
+    self:InitializeTooltip()
+
     if self.frame or not CreateFrame then
         return
     end
