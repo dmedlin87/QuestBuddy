@@ -1,6 +1,6 @@
 # QuestBuddy
 
-QuestBuddy is a small World of Warcraft retail party addon focused on one job: show your buddy's quest progress with minimal friction.
+QuestBuddy is a small World of Warcraft party addon focused on one job: show your buddy's quest progress with minimal friction.
 
 ## Features
 
@@ -17,6 +17,12 @@ QuestBuddy is a small World of Warcraft retail party addon focused on one job: s
 2. Make sure the addon folder is named `QuestBuddy` when installed in-game.
 3. Make sure the TOC file is named `QuestBuddy.toc`.
 4. Launch the client and enable QuestBuddy on the character selection screen.
+
+## Docs
+
+- [AGENTS.md](./AGENTS.md) for repository guidance
+- [CLAUDE.md](./CLAUDE.md) for contributor and agent notes
+- [ROADMAP.md](./ROADMAP.md) for planned follow-up work
 
 ## Commands
 

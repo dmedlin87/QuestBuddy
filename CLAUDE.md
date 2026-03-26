@@ -1,8 +1,10 @@
 # CLAUDE.md — QuestBuddy
 
+See [AGENTS.md](./AGENTS.md) for the primary agent handoff and repository guidance.
+
 ## Project Overview
 
-QuestBuddy is a World of Warcraft (WoW) Retail addon written in Lua 5.1. It enables party members to share and monitor each other's quest completion status in real time, with minimal performance overhead. It supports both modern Retail (Dragonflight 12.0+) and legacy (Wrath 11.0+) WoW clients.
+QuestBuddy is a World of Warcraft (WoW) addon written in Lua 5.1. It enables party members to share and monitor each other's quest completion status in real time, with minimal performance overhead. It supports both modern Retail (Dragonflight 12.0+) and legacy (Wrath 11.0+) WoW clients.
 
 ---
 
@@ -205,12 +207,7 @@ The simulated buddy generates realistic quest objectives and cycles through stat
 
 ## Git Branch
 
-Active development branch: `claude/create-claude-docs-L10EP`
-
-Push with:
-```bash
-git push -u origin claude/create-claude-docs-L10EP
-```
+Confirm the active branch with `git branch --show-current` before pushing or updating branch-specific notes.
 
 ---
 
