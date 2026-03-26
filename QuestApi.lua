@@ -73,12 +73,17 @@ function QuestApi:BuildObjectives(questIndex)
         local questObjectives = C_QuestLog.GetQuestObjectives(questId) or {}
         for _, objective in ipairs(questObjectives) do
             local text = objective.text or objective.description or ""
+            ---@type number|nil
             local current = objective.numFulfilled
+            ---@type number|nil
             local required = objective.numRequired
             local done = objective.finished and true or false
 
             if current == nil or required == nil then
-                current, required, done = self:ParseObjectiveProgress(text, done)
+                local parsedCurrent, parsedRequired, parsedDone = self:ParseObjectiveProgress(text, done)
+                current = parsedCurrent
+                required = parsedRequired
+                done = parsedDone
             end
 
             table.insert(objectives, {

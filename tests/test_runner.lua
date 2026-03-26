@@ -198,7 +198,9 @@ end
 _G.UIDropDownMenu_CreateInfo = function()
     return {}
 end
-_G.UIDropDownMenu_AddButton = function() end
+_G.UIDropDownMenu_AddButton = function(info, level)
+    return info, level
+end
 _G.UIDropDownMenu_SetText = function(frame, text)
     frame.currentText = text
 end
