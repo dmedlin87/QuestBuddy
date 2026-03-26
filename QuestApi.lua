@@ -19,6 +19,54 @@ local GetQuestLogSelection = _G.GetQuestLogSelection
 
 QuestApi.questLogMutationDepth = QuestApi.questLogMutationDepth or 0
 QuestApi.suppressQuestLogUpdatesUntil = QuestApi.suppressQuestLogUpdatesUntil or 0
+QuestApi.titleFieldOffset = QuestApi.titleFieldOffset or nil
+
+--- Detect whether GetQuestLogTitle returns an extra field before isHeader.
+--- Standard WotLK: title, level, suggestedGroup, isHeader(4), isCollapsed, isComplete, frequency, questID
+--- Ascension WoW:  title, level, suggestedGroup, extra(4), isHeader(5), isCollapsed, isComplete, frequency, questID
+local function detectTitleFieldOffset()
+    if QuestApi.titleFieldOffset ~= nil then
+        return
+    end
+
+    if not GetQuestLogTitle or not GetNumQuestLogEntries then
+        QuestApi.titleFieldOffset = 0
+        return
+    end
+
+    local entries = GetNumQuestLogEntries()
+    for i = 1, entries or 0 do
+        local _, _, _, r4, r5 = GetQuestLogTitle(i)
+        if r4 == 1 or r4 == true then
+            QuestApi.titleFieldOffset = 0
+            return
+        end
+        if r5 == 1 or r5 == true then
+            QuestApi.titleFieldOffset = 1
+            return
+        end
+    end
+
+    QuestApi.titleFieldOffset = 0
+end
+
+--- Parse GetQuestLogTitle return values, handling Ascension's shifted layout.
+local function parseQuestLogTitle(questIndex)
+    if not GetQuestLogTitle then
+        return nil, nil, nil, nil, nil, nil
+    end
+
+    detectTitleFieldOffset()
+
+    local title, level, _, r4, r5, r6, r7, r8, r9 = GetQuestLogTitle(questIndex)
+    if QuestApi.titleFieldOffset == 1 then
+        -- Ascension: extra field at r4, real fields shifted by 1
+        return title, level, (r5 == 1 or r5 == true), (r6 == 1 or r6 == true), r7, r9
+    end
+
+    -- Standard WotLK layout
+    return title, level, (r4 == 1 or r4 == true), (r5 == 1 or r5 == true), r6, r8
+end
 
 function QuestApi:BeginQuestLogMutation()
     self.questLogMutationDepth = (self.questLogMutationDepth or 0) + 1
@@ -61,29 +109,47 @@ local function getQuestLogCounts()
 end
 
 local function captureCollapsedHeaders(entryCount)
-    local collapsedHeaders = {}
+    local collapsedTitles = {}
 
     if not GetQuestLogTitle then
-        return collapsedHeaders
+        return collapsedTitles
     end
 
     for questIndex = 1, entryCount do
-        local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(questIndex)
-        if isHeader and isCollapsed then
-            table.insert(collapsedHeaders, questIndex)
+        local title, _, isHeader, isCollapsed = parseQuestLogTitle(questIndex)
+        if isHeader and isCollapsed and title then
+            table.insert(collapsedTitles, title)
         end
     end
 
-    return collapsedHeaders
+    return collapsedTitles
 end
 
-local function restoreCollapsedHeaders(collapsedHeaders)
-    if not CollapseQuestHeader then
+local function restoreCollapsedHeaders(collapsedTitles)
+    if not CollapseQuestHeader or not GetQuestLogTitle then
         return
     end
 
-    for index = #collapsedHeaders, 1, -1 do
-        CollapseQuestHeader(collapsedHeaders[index])
+    if #collapsedTitles == 0 then
+        return
+    end
+
+    local needsCollapse = {}
+    for _, title in ipairs(collapsedTitles) do
+        needsCollapse[title] = true
+    end
+
+    local entryCount = getQuestLogCounts()
+    local indicesToCollapse = {}
+    for questIndex = 1, entryCount do
+        local title, _, isHeader = parseQuestLogTitle(questIndex)
+        if isHeader and title and needsCollapse[title] then
+            table.insert(indicesToCollapse, questIndex)
+        end
+    end
+
+    for i = #indicesToCollapse, 1, -1 do
+        CollapseQuestHeader(indicesToCollapse[i])
     end
 end
 
@@ -164,11 +230,7 @@ local function getQuestInfo(questIndex)
         end
     end
 
-    if not GetQuestLogTitle then
-        return nil, nil, nil, nil, nil
-    end
-
-    local title, level, _, isHeader, _, isComplete, _, questId = GetQuestLogTitle(questIndex)
+    local title, level, isHeader, _, isComplete, questId = parseQuestLogTitle(questIndex)
     return title, level, isHeader, isComplete, questId
 end
 

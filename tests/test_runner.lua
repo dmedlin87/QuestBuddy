@@ -424,9 +424,18 @@ _G.ExpandQuestHeader = function(index)
 end
 
 _G.CollapseQuestHeader = function(index)
-    local quest = (_G.__questLog or {})[index]
-    if quest and quest.isHeader then
-        quest.isCollapsed = true
+    local visibleIndex = 0
+    for _, quest in ipairs(_G.__questLog or {}) do
+        local hiddenByHeader = quest.headerIndex and (_G.__questLog[quest.headerIndex] and _G.__questLog[quest.headerIndex].isCollapsed)
+        if quest.isHeader or not hiddenByHeader then
+            visibleIndex = visibleIndex + 1
+            if visibleIndex == index then
+                if quest.isHeader then
+                    quest.isCollapsed = true
+                end
+                return
+            end
+        end
     end
 end
 
@@ -512,6 +521,7 @@ local function resetAddonState()
     QB.initialized = false
     QB.db = nil
     QuestBuddyDB = nil
+    QB.QuestApi.titleFieldOffset = nil
     QB.State.session = nil
     QB.Tracker.frame = nil
     QB.Tracker.rows = {}
@@ -864,6 +874,7 @@ local function testQuestApiFallsBackWhenRetailQuestLogIsEmpty()
         end,
     }
 
+    QB.QuestApi.titleFieldOffset = nil
     loadModule("QuestApi.lua")
 
     local snapshot = QB.QuestApi:BuildLocalSnapshot(44)
@@ -879,6 +890,7 @@ local function testQuestApiExpandsCollapsedLegacyHeaders()
     local originalRetailQuestLog = _G.C_QuestLog
 
     _G.C_QuestLog = nil
+    QB.QuestApi.titleFieldOffset = nil
     loadModule("QuestApi.lua")
 
     _G.__questLog = {
@@ -917,6 +929,101 @@ local function testQuestApiExpandsCollapsedLegacyHeaders()
     expectEquals(_G.__questLog[1].isCollapsed, true, "quest api restores collapsed header state after reading")
 
     _G.C_QuestLog = originalRetailQuestLog
+    loadModule("QuestApi.lua")
+end
+
+local function testQuestApiRestoresMultipleCollapsedHeaders()
+    local originalRetailQuestLog = _G.C_QuestLog
+
+    _G.C_QuestLog = nil
+    QB.QuestApi.titleFieldOffset = nil
+    loadModule("QuestApi.lua")
+
+    -- Two consecutive collapsed zone headers, each with hidden quests.
+    -- Before the fix, restoreCollapsedHeaders used pre-expansion visible indices,
+    -- which shifted after ExpandQuestHeader(0), causing the second header to stay expanded.
+    _G.__questLog = {
+        {
+            title = "Elwynn Forest",
+            level = 0, questID = 0,
+            isHeader = true, isCollapsed = false,
+        },
+        {
+            title = "Quest A",
+            level = 5, questID = 101,
+            isHeader = false, isComplete = false, watched = false,
+            headerIndex = 1,
+            objectives = {},
+        },
+        {
+            title = "Westfall",
+            level = 0, questID = 0,
+            isHeader = true, isCollapsed = true,
+        },
+        {
+            title = "Quest B",
+            level = 10, questID = 102,
+            isHeader = false, isComplete = false, watched = false,
+            headerIndex = 3,
+            objectives = {},
+        },
+        {
+            title = "Redridge Mountains",
+            level = 0, questID = 0,
+            isHeader = true, isCollapsed = true,
+        },
+        {
+            title = "Quest C",
+            level = 15, questID = 103,
+            isHeader = false, isComplete = false, watched = false,
+            headerIndex = 5,
+            objectives = {},
+        },
+    }
+
+    QB.QuestApi:BuildLocalSnapshot(66)
+
+    expectEquals(_G.__questLog[3].isCollapsed, true, "first consecutive collapsed header is restored after snapshot build")
+    expectEquals(_G.__questLog[5].isCollapsed, true, "second consecutive collapsed header is restored after snapshot build")
+
+    _G.C_QuestLog = originalRetailQuestLog
+    QB.QuestApi.titleFieldOffset = nil
+    loadModule("QuestApi.lua")
+end
+
+local function testQuestApiDetectsAscensionShiftedLayout()
+    local originalRetailQuestLog = _G.C_QuestLog
+    local originalGetQuestLogTitle = _G.GetQuestLogTitle
+
+    _G.C_QuestLog = nil
+    QB.QuestApi.titleFieldOffset = nil
+
+    -- Simulate Ascension's GetQuestLogTitle with an extra field at position 4
+    -- Standard: title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID
+    -- Ascension: title, level, suggestedGroup, extra, isHeader, isCollapsed, isComplete, frequency, questID
+    _G.GetQuestLogTitle = function(index)
+        local entries = {
+            { "Arathi Highlands", 0, nil, 0, 1, nil, nil, nil, 0 },     -- zone header (expanded)
+            { "Call to Arms",     35, nil, 0, nil, nil, nil, nil, 301 }, -- quest
+            { "Foul Magics",     36, nil, 0, nil, nil, nil, nil, 302 }, -- quest
+        }
+        local entry = entries[index]
+        if not entry then return nil end
+        return entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9]
+    end
+
+    loadModule("QuestApi.lua")
+
+    local snapshot = QB.QuestApi:BuildLocalSnapshot(77)
+
+    expectEquals(QB.QuestApi.titleFieldOffset, 1, "quest api detects Ascension shifted layout")
+    expectEquals(#snapshot.quests, 2, "quest api finds quests with Ascension shifted layout")
+    expectEquals(snapshot.quests[1].title, "Call to Arms", "quest api reads correct title with Ascension layout")
+    expectEquals(snapshot.quests[1].questId, 301, "quest api reads correct questId with Ascension layout")
+
+    _G.GetQuestLogTitle = originalGetQuestLogTitle
+    _G.C_QuestLog = originalRetailQuestLog
+    QB.QuestApi.titleFieldOffset = nil
     loadModule("QuestApi.lua")
 end
 
@@ -985,6 +1092,8 @@ local tests = {
     testQuestApiBuildsRetailSnapshot,
     testQuestApiFallsBackWhenRetailQuestLogIsEmpty,
     testQuestApiExpandsCollapsedLegacyHeaders,
+    testQuestApiRestoresMultipleCollapsedHeaders,
+    testQuestApiDetectsAscensionShiftedLayout,
     testAddonInitializesRetailRuntime,
     testOptionsInitializeWithoutTemplateTextRegion,
     testTocUsesSingleRetailInterfaceValue,

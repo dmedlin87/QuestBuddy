@@ -118,6 +118,29 @@ function QB:ToggleSimulationBuddy()
     self:RefreshViews(enabled and "simulate-on" or "simulate-off")
 end
 
+function QB:DumpDebugInfo()
+    local p = function(msg) self.Compat:Printf(msg) end
+    p("--- QuestBuddy Debug ---")
+
+    if _G.GetNumQuestLogEntries then
+        local e, q = _G.GetNumQuestLogEntries()
+        p("Legacy entries: " .. tostring(e) .. ", quests: " .. tostring(q))
+    end
+
+    local snapshot = self.State:GetLocalSnapshot()
+    p("Snapshot quests: " .. tostring(snapshot and #snapshot.quests or "nil"))
+
+    if _G.GetQuestLogTitle then
+        p("-- First 6 GetQuestLogTitle entries --")
+        for i = 1, 6 do
+            local r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = _G.GetQuestLogTitle(i)
+            p(i .. ": " .. tostring(r1) .. " | " .. tostring(r2) .. " | " .. tostring(r3) .. " | " .. tostring(r4) .. " | " .. tostring(r5) .. " | " .. tostring(r6) .. " | " .. tostring(r7) .. " | " .. tostring(r8) .. " | " .. tostring(r9) .. " | " .. tostring(r10))
+        end
+    end
+
+    p("--- End Debug ---")
+end
+
 function QB:Initialize()
     if self.initialized then
         return
@@ -143,6 +166,8 @@ function QB:Initialize()
             QB:ManualRefresh()
         elseif message == "options" then
             QB:OpenOptions()
+        elseif message == "debug" then
+            QB:DumpDebugInfo()
         else
             QB:ToggleMainWindow()
         end
