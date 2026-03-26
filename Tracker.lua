@@ -30,6 +30,7 @@ local function normalizeTooltipText(text)
     text = string.gsub(text, "|r", "")
     text = string.gsub(text, "^%s+", "")
     text = string.gsub(text, "%s+$", "")
+    text = string.gsub(text, "^[-*]+%s*", "")
     text = string.gsub(text, "%s+", " ")
     return string.lower(text)
 end
@@ -74,7 +75,6 @@ end
 
 local function collectTooltipQuestMatches(localSnapshot, tooltip)
     local normalizedLines = {}
-    local matchedKeys = {}
     local matches = {}
 
     for index = 1, getTooltipLineCount(tooltip) do
@@ -85,24 +85,68 @@ local function collectTooltipQuestMatches(localSnapshot, tooltip)
     end
 
     for _, quest in ipairs((localSnapshot and localSnapshot.quests) or {}) do
-        local matched = normalizedLines[normalizeTooltipText(quest.title)]
+        local match = {
+            quest = quest,
+            objectiveIndices = {},
+            matchedByTitle = normalizedLines[normalizeTooltipText(quest.title)] and true or false,
+        }
 
-        if not matched then
-            for _, objective in ipairs(quest.objectives or {}) do
-                if objective.text and objective.text ~= "" and normalizedLines[normalizeTooltipText(objective.text)] then
-                    matched = true
-                    break
-                end
+        for objectiveIndex, objective in ipairs(quest.objectives or {}) do
+            if objective.text and objective.text ~= "" and normalizedLines[normalizeTooltipText(objective.text)] then
+                table.insert(match.objectiveIndices, objectiveIndex)
             end
         end
 
-        if matched and not matchedKeys[quest.questKey] then
-            matchedKeys[quest.questKey] = true
-            table.insert(matches, quest)
+        if match.matchedByTitle or #match.objectiveIndices > 0 then
+            table.insert(matches, match)
         end
     end
 
     return matches
+end
+
+local function trimText(text)
+    text = tostring(text or "")
+    text = string.gsub(text, "^%s+", "")
+    text = string.gsub(text, "%s+$", "")
+    return text
+end
+
+local function stripObjectiveProgress(text)
+    text = trimText(text)
+    text = string.gsub(text, "%s*%(%s*%d+%s*/%s*%d+%s*%)%s*$", "")
+    text = string.gsub(text, "%s*[:%-]?%s*%d+%s*/%s*%d+%s*$", "")
+    return trimText(text)
+end
+
+local function summarizeObjective(localObjective, buddyObjective)
+    local labelSource = (localObjective and localObjective.text) or (buddyObjective and buddyObjective.text) or ""
+    local label = stripObjectiveProgress(labelSource)
+
+    if buddyObjective and buddyObjective.current ~= nil and buddyObjective.required ~= nil then
+        local progress = string.format("%d/%d", buddyObjective.current, buddyObjective.required)
+        if label ~= "" then
+            return string.format("%s: %s", label, progress)
+        end
+        return progress
+    end
+
+    if buddyObjective and buddyObjective.done then
+        if label ~= "" then
+            return string.format("%s: Done", label)
+        end
+        return "Done"
+    end
+
+    if buddyObjective and buddyObjective.text and buddyObjective.text ~= "" then
+        return buddyObjective.text
+    end
+
+    if localObjective and localObjective.text and localObjective.text ~= "" then
+        return localObjective.text
+    end
+
+    return "In progress"
 end
 
 local function applyBackdrop(frame)
@@ -156,7 +200,8 @@ function Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
     local peerMap = QB.Snapshot:IndexByKey(peer and peer.snapshot or nil)
     local lines = {}
 
-    for _, quest in ipairs(matches) do
+    for _, match in ipairs(matches) do
+        local quest = match.quest
         local buddyQuest = peerMap[quest.questKey]
         local buddyText
 
@@ -166,13 +211,24 @@ function Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
             buddyText = "Updating..."
         elseif status == "Offline" then
             buddyText = "Offline"
-        elseif buddyQuest then
-            buddyText = QB.Snapshot:SummarizeQuest(buddyQuest)
-        else
+        elseif not buddyQuest then
             buddyText = "Buddy missing"
+        elseif #match.objectiveIndices > 0 then
+            for _, objectiveIndex in ipairs(match.objectiveIndices) do
+                local objectiveText = summarizeObjective(
+                    quest.objectives and quest.objectives[objectiveIndex] or nil,
+                    buddyQuest.objectives and buddyQuest.objectives[objectiveIndex] or nil
+                )
+                table.insert(lines, string.format("%s: %s", quest.title, objectiveText))
+            end
+            buddyText = nil
+        else
+            buddyText = QB.Snapshot:SummarizeQuest(buddyQuest)
         end
 
-        table.insert(lines, string.format("%s: %s", quest.title, buddyText))
+        if buddyText then
+            table.insert(lines, string.format("%s: %s", quest.title, buddyText))
+        end
     end
 
     return lines

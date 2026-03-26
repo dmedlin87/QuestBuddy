@@ -815,7 +815,33 @@ local function testTooltipShowsSimulatedBuddyQuestProgressForUnitTooltip()
 
     expectEquals(_G.GameTooltip.leftLines[4], " ", "tooltip inserts a spacer before QuestBuddy lines")
     expectEquals(_G.GameTooltip.leftLines[5], "QuestBuddy: Simulated Buddy", "tooltip adds a QuestBuddy header for the focused simulated buddy")
-    expectEquals(_G.GameTooltip.leftLines[6], "Shared Quest: 2/6", "tooltip shows simulated buddy quest progress for matching quest NPC tooltips")
+    expectEquals(_G.GameTooltip.leftLines[6], "Shared Quest: Apples: 2/6", "tooltip shows simulated buddy progress for the matched tooltip objective")
+end
+
+local function testTooltipLimitsQuestProgressToMatchedObjective()
+    resetAddonState()
+    QB:OnEvent("ADDON_LOADED", "QuestBuddy")
+
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me", 1, {
+        makeQuest("shared", "Pacify the Centaur", 10, true, "active", {
+            { text = "Galak Scout slain: 1/12", current = 1, required = 12, done = false },
+            { text = "Galak Wrangler slain: 3/10", current = 3, required = 10, done = false },
+            { text = "Galak Windchaser slain: 6/6", current = 6, required = 6, done = true },
+        }, 1),
+    })
+    QB.State:CreateSimulatedPeer(10)
+
+    setTooltipLines(_G.GameTooltip, {
+        "Galak Scout",
+        "Dead",
+        "Pacify the Centaur",
+        "- Galak Scout slain: 1/12",
+    })
+
+    _G.GameTooltip:GetScript("OnTooltipSetUnit")(_G.GameTooltip)
+
+    expectEquals(_G.GameTooltip.leftLines[7], "Pacify the Centaur: Galak Scout slain: 2/12", "tooltip prefers the bullet objective match over the quest title summary")
+    expectEquals(_G.GameTooltip.leftLines[8], nil, "tooltip does not append unrelated objectives from the same quest")
 end
 
 local function testRefreshLocalSnapshotIgnoresUpdatedOnlyChanges()
@@ -1146,6 +1172,7 @@ local tests = {
     testSimulationRefreshesLocalSnapshotBeforeBuildingPeer,
     testSimulatedEmptyStateExplainsMissingLocalQuests,
     testTooltipShowsSimulatedBuddyQuestProgressForUnitTooltip,
+    testTooltipLimitsQuestProgressToMatchedObjective,
     testRefreshLocalSnapshotIgnoresUpdatedOnlyChanges,
     testSendSnapshotUsesWhisperAndBoundedChunks,
     testHelloRequestUsesWhisper,
