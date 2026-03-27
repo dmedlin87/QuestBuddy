@@ -2,6 +2,8 @@
 _G = _G or _ENV
 _G.QuestBuddy = {}
 
+local unpackCompat = table.unpack or unpack
+
 local function makeFontString()
     return {
         text = "",
@@ -927,7 +929,7 @@ local function testSnapshotTransferTimeoutClearsUpdatingState()
     QB.Comms:HandleSnapshotStart("Buddy-Realm", { "transfer-1", "2", "1", "100", "10" })
     expectEquals(QB.State:GetPeer("Buddy-Realm").updating, true, "snapshot start marks peer updating")
 
-    scheduledCallback(table.unpack(scheduledArgs))
+    scheduledCallback(unpackCompat(scheduledArgs))
 
     QB.Compat.After = originalAfter
     QB.Compat.CancelTimer = originalCancelTimer

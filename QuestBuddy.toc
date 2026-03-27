@@ -2,7 +2,7 @@
 ## Title: QuestBuddy
 ## Notes: Lightweight party quest progress visibility for duos and small parties.
 ## Author: GitHub Copilot
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: QuestBuddyDB
 
 Compat.lua
