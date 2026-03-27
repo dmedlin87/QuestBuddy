@@ -4,9 +4,15 @@ $lua = Get-Command lua -ErrorAction SilentlyContinue
 if (-not $lua) {
     $lua = Get-Command luajit -ErrorAction SilentlyContinue
 }
+if (-not $lua) {
+    $lua = Get-Command lua5.1 -ErrorAction SilentlyContinue
+}
+if (-not $lua) {
+    $lua = Get-Command lua5.4 -ErrorAction SilentlyContinue
+}
 
 if (-not $lua) {
-    throw 'No lua or luajit executable was found on PATH.'
+    throw 'No lua, luajit, lua5.1, or lua5.4 executable was found on PATH.'
 }
 
 & $lua.Source 'tests/test_runner.lua'

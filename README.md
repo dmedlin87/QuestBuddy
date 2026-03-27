@@ -64,8 +64,23 @@ For implementation details, protocol notes, and contributor-facing guidance, see
 
 ## Local Checks
 
-Run the local regression suite from the addon root. `lua` or `luajit` must be available on `PATH`.
+Run the local regression suite from the addon root. `lua`, `luajit`, `lua5.1`, or `lua5.4` must be available on `PATH`.
 
 ```powershell
 ./check.ps1
+```
+
+## Release Packaging
+
+QuestBuddy can be published for AscensionUp through GitHub Releases. The release workflow runs when you push a tag like `v1.0.0` and uploads:
+
+- `QuestBuddy-v<version>.zip`
+- `addon-manifest.json`
+
+The zip is built from the runtime files declared in `QuestBuddy.toc`, staged into a clean top-level `QuestBuddy/` folder, and validated against the installer contract.
+
+To build the release assets locally:
+
+```powershell
+./scripts/Build-AscensionRelease.ps1 -Version 1.0.0
 ```
