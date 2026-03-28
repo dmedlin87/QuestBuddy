@@ -21,6 +21,12 @@ For implementation details, protocol notes, and contributor-facing guidance, see
 3. Make sure the manifest file is named `QuestBuddy.toc`.
 4. Launch the client and enable QuestBuddy on the character selection screen.
 
+For local Windows installs during development, you can run:
+
+```powershell
+./install_quest-buddy.ps1
+```
+
 ## Usage
 
 - Both players need QuestBuddy enabled before buddy data appears.
