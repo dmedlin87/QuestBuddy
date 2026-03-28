@@ -1,12 +1,13 @@
 ---@diagnostic disable: undefined-global, undefined-field
-local addonName, QB = ...
+local _, QB = ...
 
 QB = QB or _G.QuestBuddy or {}
 _G.QuestBuddy = QB
 QB.Compat = QB.Compat or {}
 
 local Compat = QB.Compat
-local unpack = table.unpack or unpack
+local unpack = rawget(table, "unpack") or unpack
+local CreateFrame = _G.CreateFrame
 local GetTime = _G.GetTime
 local time = _G.time
 local C_ChatInfo = _G.C_ChatInfo
@@ -20,6 +21,7 @@ local RegisterAddonMessagePrefix = _G.RegisterAddonMessagePrefix
 local UnitExists = _G.UnitExists
 local UnitName = _G.UnitName
 local UNKNOWN = _G.UNKNOWN
+local DEFAULT_CHAT_FRAME = _G.DEFAULT_CHAT_FRAME
 
 Compat.timerFrame = Compat.timerFrame or nil
 Compat.timers = Compat.timers or {}
@@ -32,8 +34,6 @@ local function ensureTimerFrame()
 
     Compat.timerFrame = CreateFrame("Frame")
     Compat.timerFrame:SetScript("OnUpdate", function(_, elapsed)
-        local now = Compat:GetTime()
-
         for timerId, timer in pairs(Compat.timers) do
             timer.remaining = timer.remaining - elapsed
             if timer.remaining <= 0 then

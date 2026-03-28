@@ -2,7 +2,7 @@
 _G = _G or _ENV
 _G.QuestBuddy = {}
 
-local unpackCompat = table.unpack or unpack
+local unpackCompat = rawget(table, "unpack") or unpack
 
 local function makeFontString()
     return {
@@ -385,7 +385,7 @@ end
 _G.GetQuestLogTitle = function(index)
     local visibleIndex = 0
 
-    for actualIndex, quest in ipairs(_G.__questLog or {}) do
+    for _, quest in ipairs(_G.__questLog or {}) do
         local hiddenByHeader = quest.headerIndex and (_G.__questLog[quest.headerIndex] and _G.__questLog[quest.headerIndex].isCollapsed)
         if quest.isHeader or not hiddenByHeader then
             visibleIndex = visibleIndex + 1

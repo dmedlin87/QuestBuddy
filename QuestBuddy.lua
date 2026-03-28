@@ -3,6 +3,9 @@ local addonName, QB = ...
 QB = QB or _G.QuestBuddy or {}
 _G.QuestBuddy = QB
 
+local CreateFrame = _G.CreateFrame
+local SlashCmdList = _G.SlashCmdList
+
 QB.defaults = {
     options = {
         enableTrackerOverlay = true,
@@ -26,8 +29,8 @@ QB.frame = QB.frame or nil
 QB.initialized = QB.initialized or false
 
 local function ensureSavedVariables()
-    QuestBuddyDB = QuestBuddyDB or {}
-    QB.db = QB.Compat:MergeDefaults(QuestBuddyDB, QB.defaults)
+    _G.QuestBuddyDB = _G.QuestBuddyDB or {}
+    QB.db = QB.Compat:MergeDefaults(_G.QuestBuddyDB, QB.defaults)
 end
 
 function QB:GetOption(key)
@@ -134,7 +137,19 @@ function QB:DumpDebugInfo()
         p("-- First 6 GetQuestLogTitle entries --")
         for i = 1, 6 do
             local r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = _G.GetQuestLogTitle(i)
-            p(i .. ": " .. tostring(r1) .. " | " .. tostring(r2) .. " | " .. tostring(r3) .. " | " .. tostring(r4) .. " | " .. tostring(r5) .. " | " .. tostring(r6) .. " | " .. tostring(r7) .. " | " .. tostring(r8) .. " | " .. tostring(r9) .. " | " .. tostring(r10))
+            local values = {
+                tostring(r1),
+                tostring(r2),
+                tostring(r3),
+                tostring(r4),
+                tostring(r5),
+                tostring(r6),
+                tostring(r7),
+                tostring(r8),
+                tostring(r9),
+                tostring(r10),
+            }
+            p(string.format("%d: %s", i, table.concat(values, " | ")))
         end
     end
 
@@ -159,7 +174,7 @@ function QB:Initialize()
         self.Compat:Printf("QuestBuddy: failed to register addon message prefix '%s'.", self.Protocol.PREFIX)
     end
 
-    SLASH_QUESTBUDDY1 = "/qb"
+    _G.SLASH_QUESTBUDDY1 = "/qb"
     SlashCmdList.QUESTBUDDY = function(message)
         message = string.lower(string.gsub(message or "", "^%s+", ""))
         if message == "refresh" then

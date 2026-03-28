@@ -1,4 +1,4 @@
-local addonName, QB = ...
+local _, QB = ...
 
 QB = QB or _G.QuestBuddy or {}
 _G.QuestBuddy = QB
@@ -52,15 +52,15 @@ function Comms:SendSnapshot(targetName)
     local serialized = QB.Snapshot:Serialize(snapshot, true)
     local checksum = QB.Snapshot:Checksum(serialized)
     local chunkSize = QB.Protocol:GetMaxChunkDataSize(transferId, 1)
-    local chunks = {}
+    local chunks = QB.Snapshot:ChunkString(serialized, chunkSize)
 
     while true do
-        chunks = QB.Snapshot:ChunkString(serialized, chunkSize)
         local nextChunkSize = QB.Protocol:GetMaxChunkDataSize(transferId, #chunks)
         if nextChunkSize == chunkSize then
             break
         end
         chunkSize = nextChunkSize
+        chunks = QB.Snapshot:ChunkString(serialized, chunkSize)
     end
 
     local distribution = targetName and "WHISPER" or "PARTY"
@@ -183,7 +183,7 @@ function Comms:HandleSnapshotEnd(sender, fields)
         return
     end
 
-    local snapshot, errorMessage = QB.Snapshot:Deserialize(serialized)
+    local snapshot = QB.Snapshot:Deserialize(serialized)
     self.incomingTransfers[sender] = nil
     if not snapshot then
         QB.State:SetPeerUpdating(sender, false)
@@ -206,7 +206,7 @@ function Comms:OnAddonMessage(prefix, payload, channel, sender)
         return
     end
 
-    local decoded, errorMessage = QB.Protocol:Decode(payload)
+    local decoded = QB.Protocol:Decode(payload)
     if not decoded then
         return
     end

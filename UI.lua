@@ -1,4 +1,4 @@
-local addonName, QB = ...
+local _, QB = ...
 
 QB = QB or _G.QuestBuddy or {}
 _G.QuestBuddy = QB
@@ -6,6 +6,12 @@ QB.UI = QB.UI or {}
 
 local UI = QB.UI
 local CreateFrame = _G.CreateFrame
+local UIParent = _G.UIParent
+local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
+local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
+local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
+local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
+local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
 local BackdropTemplate = _G.BackdropTemplateMixin and "BackdropTemplate" or nil
 
 UI.frame = UI.frame or nil

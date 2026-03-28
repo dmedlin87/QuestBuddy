@@ -1,4 +1,4 @@
-local addonName, QB = ...
+local _, QB = ...
 
 QB = QB or _G.QuestBuddy or {}
 _G.QuestBuddy = QB
@@ -124,7 +124,10 @@ function Protocol:GetMaxChunkDataSize(transferId, chunkCountHint)
 
     while low <= high do
         local mid = math.floor((low + high) / 2)
-        local encodedLength = self:GetEncodedLength("SNAPSHOT_CHUNK", { transferId or "", chunkIndex, string.rep("x", mid) })
+        local encodedLength = self:GetEncodedLength(
+            "SNAPSHOT_CHUNK",
+            { transferId or "", chunkIndex, string.rep("x", mid) }
+        )
 
         if encodedLength <= self.MAX_MESSAGE_SIZE then
             best = mid

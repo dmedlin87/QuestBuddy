@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global, undefined-field
-local addonName, QB = ...
+local _, QB = ...
 
 QB = QB or _G.QuestBuddy or {}
 _G.QuestBuddy = QB
@@ -7,6 +7,7 @@ QB.Tracker = QB.Tracker or {}
 
 local Tracker = QB.Tracker
 local CreateFrame = _G.CreateFrame
+local UIParent = _G.UIParent
 local BackdropTemplate = _G.BackdropTemplateMixin and "BackdropTemplate" or nil
 
 Tracker.frame = Tracker.frame or nil

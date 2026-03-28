@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global, undefined-field
-local addonName, QB = ...
+local _, QB = ...
 
 QB = QB or _G.QuestBuddy or {}
 _G.QuestBuddy = QB
