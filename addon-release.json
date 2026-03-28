@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "addonId": "quest-buddy",
+  "displayName": "QuestBuddy",
+  "version": "1.0.1",
+  "targetSupport": ["Bronzebeard"],
+  "folders": ["QuestBuddy"],
+  "minInstallerVersion": "1.0.0"
+}

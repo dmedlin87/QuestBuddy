@@ -34,25 +34,37 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Derive release version
-        id: version
-        shell: bash
+        id: release
+        shell: pwsh
+        env:
+          GITHUB_REF_NAME_SAFE: ${{ github.ref_name }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "zip_name=QuestBuddy-v$version.zip" >> "$GITHUB_OUTPUT"
+          $release = Get-Content -LiteralPath "./addon-release.json" -Raw | ConvertFrom-Json
+          $version = [string]$release.version
+          $zipName = "{0}-v{1}.zip" -f @($release.folders)[0], $version
+          if ("v$version" -ne $env:GITHUB_REF_NAME_SAFE) {
+            throw "Tag '$($env:GITHUB_REF_NAME_SAFE)' does not match addon-release.json version 'v$version'."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
 
       - name: Build installer-ready release assets
         shell: pwsh
+        env:
+          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          ./scripts/Build-AscensionRelease.ps1 -Version "${{ steps.version.outputs.version }}" -OutputDir "release-assets"
+          ./scripts/Build-AscensionRelease.ps1 -ExpectedVersion $env:EXPECTED_VERSION -OutputDir "release-assets"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release-assets/${{ steps.version.outputs.zip_name }}
-            release-assets/addon-manifest.json
-          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF_NAME_SAFE: ${{ github.ref_name }}
+          ZIP_NAME: ${{ steps.release.outputs.zip_name }}
+        run: |
+          if ($env:GITHUB_REF_NAME_SAFE.Contains("-beta") -or $env:GITHUB_REF_NAME_SAFE.Contains("-alpha")) {
+            gh release create $env:GITHUB_REF_NAME_SAFE "release-assets/$($env:ZIP_NAME)" "release-assets/addon-manifest.json" --verify-tag --prerelease
+          } else {
+            gh release create $env:GITHUB_REF_NAME_SAFE "release-assets/$($env:ZIP_NAME)" "release-assets/addon-manifest.json" --verify-tag
+          }
 

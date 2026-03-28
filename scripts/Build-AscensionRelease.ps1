@@ -1,20 +1,47 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Version,
-
     [Parameter(Mandatory = $false)]
     [string]$OutputDir = "release-assets",
 
     [Parameter(Mandatory = $false)]
-    [string]$ReleaseNotes = ""
+    [string]$ReleaseNotes = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$ExpectedVersion
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$addonName = "QuestBuddy"
-$addonId = "quest-buddy"
-$tocPath = Join-Path $repoRoot "$addonName.toc"
+$releaseConfigPath = Join-Path $repoRoot "addon-release.json"
+if (-not (Test-Path -LiteralPath $releaseConfigPath -PathType Leaf)) {
+    throw "Expected release metadata file was not found at '$releaseConfigPath'."
+}
+$releaseConfig = Get-Content -LiteralPath $releaseConfigPath -Raw | ConvertFrom-Json
+
+if ($releaseConfig.schemaVersion -ne 1) {
+    throw "Release metadata schemaVersion must be 1."
+}
+
+$addonName = [string]$releaseConfig.displayName
+$addonId = [string]$releaseConfig.addonId
+$Version = [string]$releaseConfig.version
+$targetSupport = @($releaseConfig.targetSupport)
+$folders = @($releaseConfig.folders)
+$minInstallerVersion = [string]$releaseConfig.minInstallerVersion
+
+if ([string]::IsNullOrWhiteSpace($addonName) -or
+    [string]::IsNullOrWhiteSpace($addonId) -or
+    [string]::IsNullOrWhiteSpace($Version) -or
+    [string]::IsNullOrWhiteSpace($minInstallerVersion)) {
+    throw "Release metadata is missing one of: displayName, addonId, version, minInstallerVersion."
+}
+
+if ($folders.Count -ne 1) {
+    throw "Release metadata must define exactly one managed folder."
+}
+
+$addonFolder = [string]$folders[0]
+$tocPath = Join-Path $repoRoot "$addonFolder.toc"
 $resolvedOutputDir = if ([System.IO.Path]::IsPathRooted($OutputDir)) {
     $OutputDir
 } else {
@@ -25,6 +52,18 @@ $semverPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d
 
 if ($Version -notmatch $semverPattern) {
     throw "Version '$Version' is not valid semver. Use a tag like v1.0.0 or v1.0.0-beta.1."
+}
+
+if ($ExpectedVersion -and $ExpectedVersion -ne $Version) {
+    throw "Release metadata version '$Version' does not match expected version '$ExpectedVersion'."
+}
+
+if ($targetSupport.Count -eq 0) {
+    throw "Release metadata must define at least one supported target."
+}
+
+if ($minInstallerVersion -notmatch $semverPattern) {
+    throw "minInstallerVersion '$minInstallerVersion' is not valid semver."
 }
 
 if (-not (Test-Path -LiteralPath $tocPath -PathType Leaf)) {
@@ -49,11 +88,11 @@ if (-not $tocEntries) {
     throw "No runtime files were declared in '$tocPath'."
 }
 
-$zipName = "$addonName-v$Version.zip"
+$zipName = "$addonFolder-v$Version.zip"
 $zipPath = Join-Path $resolvedOutputDir $zipName
 $manifestPath = Join-Path $resolvedOutputDir "addon-manifest.json"
-$stageRoot = Join-Path $resolvedOutputDir ".stage-$addonName-$Version"
-$stagedAddonPath = Join-Path $stageRoot $addonName
+$stageRoot = Join-Path $resolvedOutputDir ".stage-$addonFolder-$Version"
+$stagedAddonPath = Join-Path $stageRoot $addonFolder
 
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
@@ -62,7 +101,7 @@ if (Test-Path -LiteralPath $stageRoot) {
 New-Item -ItemType Directory -Path $stagedAddonPath -Force | Out-Null
 New-Item -ItemType Directory -Path $resolvedOutputDir -Force | Out-Null
 
-Copy-Item -LiteralPath $tocPath -Destination (Join-Path $stagedAddonPath "$addonName.toc") -Force
+Copy-Item -LiteralPath $tocPath -Destination (Join-Path $stagedAddonPath "$addonFolder.toc") -Force
 
 foreach ($entry in $tocEntries) {
     if ([System.IO.Path]::IsPathRooted($entry) -or $entry.Contains("..")) {
@@ -116,9 +155,9 @@ try {
         }
     }
 
-    if ($rootNames.Count -ne 1 -or -not $rootNames.Contains($addonName)) {
+    if ($rootNames.Count -ne 1 -or -not $rootNames.Contains($addonFolder)) {
         $foundRoots = ($rootNames | Sort-Object) -join ', '
-        throw "Zip root validation failed. Expected only '$addonName' at the archive root, found: $foundRoots"
+        throw "Zip root validation failed. Expected only '$addonFolder' at the archive root, found: $foundRoots"
     }
 }
 finally {
@@ -130,11 +169,11 @@ $manifest = [ordered]@{
     addonId             = $addonId
     displayName         = $addonName
     version             = $Version
-    targetSupport       = @("Bronzebeard")
-    folders             = @($addonName)
+    targetSupport       = $targetSupport
+    folders             = $folders
     assetName           = $zipName
     sha256              = $hash
-    minInstallerVersion = "1.0.0"
+    minInstallerVersion = $minInstallerVersion
     releaseNotes        = $ReleaseNotes
 }
 
@@ -146,16 +185,28 @@ if ($writtenManifest.addonId -ne $addonId) {
     throw "Manifest validation failed: addonId must be '$addonId'."
 }
 
-if (@($writtenManifest.folders).Count -ne 1 -or @($writtenManifest.folders)[0] -ne $addonName) {
-    throw "Manifest validation failed: folders must be ['$addonName']."
+if (@($writtenManifest.folders).Count -ne $folders.Count) {
+    throw "Manifest validation failed: folders do not match release metadata."
 }
 
 if ($writtenManifest.assetName -ne $zipName) {
     throw "Manifest validation failed: assetName does not match the zip asset name."
 }
 
-if (-not (@($writtenManifest.targetSupport) -contains "Bronzebeard")) {
-    throw "Manifest validation failed: targetSupport must include 'Bronzebeard'."
+foreach ($folder in $folders) {
+    if (-not (@($writtenManifest.folders) -contains $folder)) {
+        throw "Manifest validation failed: folders do not match release metadata."
+    }
+}
+
+foreach ($target in $targetSupport) {
+    if (-not (@($writtenManifest.targetSupport) -contains $target)) {
+        throw "Manifest validation failed: targetSupport does not match release metadata."
+    }
+}
+
+if ($writtenManifest.minInstallerVersion -ne $minInstallerVersion) {
+    throw "Manifest validation failed: minInstallerVersion does not match release metadata."
 }
 
 if ($writtenManifest.version -ne $Version) {

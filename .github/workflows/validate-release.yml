@@ -1,0 +1,19 @@
+name: Validate Release Metadata
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate installer-ready release assets
+        shell: pwsh
+        run: |
+          ./scripts/Build-AscensionRelease.ps1 -OutputDir "release-assets-validate"
