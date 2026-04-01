@@ -21,6 +21,8 @@ For implementation details, protocol notes, and contributor-facing guidance, see
 3. Make sure the manifest file is named `QuestBuddy.toc`.
 4. Launch the client and enable QuestBuddy on the character selection screen.
 
+For CoA / PTR installs, run `./install_quest-buddy.ps1 -Flavor ptr` or point `-WowPath` at `C:\Program Files\Ascension PTR`.
+
 For local Windows installs during development, you can run:
 
 ```powershell

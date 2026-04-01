@@ -6,11 +6,15 @@ param(
     [string]$WowPath = "C:\Program Files\Ascension Launcher\resources\client",
 
     [Parameter(Mandatory = $false)]
-    [string]$Flavor = "retail", # retail, classic, classic_era
+    [string]$Flavor = "retail", # retail, classic, classic_era, ptr
 
     [Parameter(Mandatory = $false)]
     [switch]$PauseOnExit
 )
+
+if ($Flavor -eq "ptr" -and -not $PSBoundParameters.ContainsKey("WowPath")) {
+    $WowPath = "C:\Program Files\Ascension PTR"
+}
 
 $sharedHelperPath = Join-Path $PSScriptRoot "scripts\AddonDevManager.ps1"
 if (-not (Test-Path -LiteralPath $sharedHelperPath -PathType Leaf)) {

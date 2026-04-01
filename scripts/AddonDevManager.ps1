@@ -52,7 +52,7 @@ class AddonDevManager {
 
     [string] GetUsage() {
         return ".\\" + [System.IO.Path]::GetFileName($this.Config.EntryScriptPath) +
-            " -Action [" + (($this.GetSupportedActions()) -join "|") + "] -Flavor [retail|classic|classic_era]"
+            " -Action [" + (($this.GetSupportedActions()) -join "|") + "] -Flavor [retail|classic|classic_era|ptr]"
     }
 
     [string] GetDirectAddonDir() {
