@@ -69,6 +69,7 @@ Defined in `QuestBuddy.toc`. Modules must be modified with load order in mind:
 ```
 
 - Requires `lua` or `luajit` on the system PATH.
+- Also supports `lua5.1` and `lua5.4` as fallbacks via `check.ps1`.
 - Runs `tests/test_runner.lua` which stubs the WoW API and exercises all modules.
 - Exit code 0 = pass, non-zero = fail.
 - **Always run tests after making changes.**
@@ -106,9 +107,10 @@ The addon is entirely event-driven. `QuestBuddy.lua` registers WoW frame events 
 | `ADDON_LOADED` | Initialize saved variables, UI, comms |
 | `CHAT_MSG_ADDON` | Route incoming addon messages via `Comms` |
 | `QUEST_LOG_UPDATE` | Rebuild local snapshot, broadcast delta |
-| `QUEST_WATCH_UPDATE` | Refresh tracker overlay |
+| `QUEST_WATCH_UPDATE` | Rebuild local snapshot, refresh UI, and queue snapshot broadcast when data changed |
 | `GROUP_ROSTER_UPDATE` | Detect party joins/leaves, send Hello/Goodbye |
-| `ZONE_CHANGED_NEW_AREA` | Trigger snapshot refresh |
+| `PLAYER_ENTERING_WORLD` | Refresh snapshot and party state on world entry |
+| `ZONE_CHANGED_NEW_AREA` | Re-check party peer state and refresh views |
 | `PLAYER_LOGOUT` | Send Goodbye message to peers |
 
 ### Protocol
@@ -191,7 +193,7 @@ The simulated buddy generates realistic quest objectives and cycles through stat
 
 - **Quest log:** `C_QuestLog.*` (Retail API). `QuestApi.lua` wraps these.
 - **Party:** `GetNumGroupMembers()`, `GetRaidRosterInfo()`. `PartyApi.lua` wraps these.
-- **Addon messaging:** `C_ChatInfo.RegisterAddonMessagePrefix`, `SendAddonMessage`. Channel is `"PARTY"`.
+- **Addon messaging:** `C_ChatInfo.RegisterAddonMessagePrefix`, `SendAddonMessage`. Uses `"PARTY"` broadcast plus targeted `"WHISPER"` snapshot request/reply flows.
 - **UI frames:** `CreateFrame`, `BackdropTemplate`, `InterfaceOptions_AddCategory`.
 - **Compat layer:** `Compat.lua` polyfills missing APIs for version differences. Add new compatibility shims there.
 
