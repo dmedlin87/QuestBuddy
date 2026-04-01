@@ -910,6 +910,88 @@ local function testHelloRequestUsesWhisper()
     expectEquals(_G.__sentMessages[1].target, "Buddy-Realm", "hello snapshot request targets the announcing peer")
 end
 
+local function testSnapshotRequestHonorsTargetName()
+    QB.State:Initialize({})
+    QB.Comms:Initialize()
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me-Realm", 1, {
+        makeQuest("id:1", "Quest", 10, true, "active", {}),
+    })
+
+    _G.__sentMessages = {}
+    QB.Comms:HandleSnapshotRequest("Buddy-Realm", { "Someone-Else", "manual" })
+    expectEquals(#_G.__sentMessages, 0, "snapshot request for a different target is ignored")
+
+    QB.Comms:HandleSnapshotRequest("Buddy-Realm", { "Me-Realm", "manual" })
+    expectTrue(#_G.__sentMessages > 0, "snapshot request targeting this player sends a snapshot")
+    expectEquals(_G.__sentMessages[1].distribution, "WHISPER", "targeted snapshot request replies with whisper")
+    expectEquals(_G.__sentMessages[1].target, "Buddy-Realm", "targeted snapshot request replies to sender")
+end
+
+local function testAddonMessageIgnoresNonPartyAndSelfMessages()
+    QB.State:Initialize({})
+    QB.Comms:Initialize()
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me-Realm", 1, {})
+
+    _G.__partyMembers = { "Buddy-Realm" }
+    _G.__sentMessages = {}
+    QB.Comms:OnAddonMessage(QB.Protocol.PREFIX, QB.Protocol:EncodeHello(2, 0), "PARTY", "Me-Realm")
+    expectEquals(#_G.__sentMessages, 0, "messages sent by self are ignored")
+
+    QB.Comms:OnAddonMessage(QB.Protocol.PREFIX, QB.Protocol:EncodeHello(2, 0), "PARTY", "Stranger-Realm")
+    expectEquals(#_G.__sentMessages, 0, "messages from non-party senders are ignored")
+end
+
+local function testQueueSnapshotBroadcastReschedulesDuringCooldown()
+    QB.State:Initialize({})
+    QB.Comms:Initialize()
+
+    local originalAfter = QB.Compat.After
+    local originalCancelTimer = QB.Compat.CancelTimer
+    local originalIsInParty = QB.Compat.IsInParty
+    local originalSendSnapshot = QB.Comms.SendSnapshot
+    local timers = {}
+    local sendCount = 0
+    local cancelCount = 0
+
+    QB.Compat.After = function(_, seconds, callback)
+        table.insert(timers, { seconds = seconds, callback = callback })
+        return #timers
+    end
+    QB.Compat.CancelTimer = function(_, timerId)
+        if timerId then
+            cancelCount = cancelCount + 1
+        end
+    end
+    QB.Compat.IsInParty = function()
+        return true
+    end
+    QB.Comms.SendSnapshot = function()
+        sendCount = sendCount + 1
+        return true
+    end
+
+    QB.Comms.lastSnapshotSentAt = 10
+    _G.__time = 12
+    QB.Comms:QueueSnapshotBroadcast("quest-update")
+
+    expectEquals(#timers, 1, "queue snapshot schedules an initial timer")
+
+    timers[1].callback()
+    expectEquals(#timers, 2, "queue snapshot reschedules while inside cooldown window")
+    expectEquals(sendCount, 0, "queue snapshot does not send while still throttled")
+
+    _G.__time = 15
+    timers[2].callback()
+    expectEquals(sendCount, 1, "queue snapshot sends once cooldown has elapsed")
+    expectEquals(cancelCount, 1, "queue snapshot cancels prior timer before scheduling a replacement")
+    expectEquals(QB.Comms.pendingSnapshotTimer, nil, "queue snapshot clears pending timer after send")
+
+    QB.Compat.After = originalAfter
+    QB.Compat.CancelTimer = originalCancelTimer
+    QB.Compat.IsInParty = originalIsInParty
+    QB.Comms.SendSnapshot = originalSendSnapshot
+end
+
 local function testSnapshotTransferTimeoutClearsUpdatingState()
     QB.State:Initialize({})
     QB.Comms:Initialize()
@@ -1266,6 +1348,9 @@ local tests = {
     testRefreshLocalSnapshotIgnoresUpdatedOnlyChanges,
     testSendSnapshotUsesWhisperAndBoundedChunks,
     testHelloRequestUsesWhisper,
+    testSnapshotRequestHonorsTargetName,
+    testAddonMessageIgnoresNonPartyAndSelfMessages,
+    testQueueSnapshotBroadcastReschedulesDuringCooldown,
     testSnapshotTransferTimeoutClearsUpdatingState,
     testSnapshotEndRejectsChecksumMismatch,
     testSnapshotEndAppliesValidSnapshot,
