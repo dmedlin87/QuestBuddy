@@ -938,6 +938,70 @@ local function testSnapshotTransferTimeoutClearsUpdatingState()
     expectEquals(QB.Comms.incomingTransfers["Buddy-Realm"], nil, "timed out transfer is discarded")
 end
 
+local function testSnapshotEndRejectsChecksumMismatch()
+    QB.State:Initialize({})
+    QB.Comms:Initialize()
+
+    local snapshot = makeSnapshot("Buddy-Realm", 3, {
+        makeQuest("id:1", "Quest", 10, true, "active", {
+            { text = "Widgets: 2/4", current = 2, required = 4, done = false },
+        }),
+    })
+    local serialized = QB.Snapshot:Serialize(snapshot, true)
+    local transferId = "transfer-bad-checksum"
+
+    QB.Comms:HandleSnapshotStart("Buddy-Realm", {
+        transferId,
+        tostring(snapshot.revision),
+        "1",
+        tostring(QB.Snapshot:Checksum(serialized)),
+        tostring(string.len(serialized)),
+    })
+    QB.Comms:HandleSnapshotChunk("Buddy-Realm", { transferId, "1", serialized })
+    QB.Comms:HandleSnapshotEnd("Buddy-Realm", {
+        transferId,
+        tostring(snapshot.revision),
+        tostring(QB.Snapshot:Checksum(serialized) + 1),
+    })
+
+    expectEquals(QB.State:GetPeer("Buddy-Realm").updating, false, "checksum mismatch clears peer updating flag")
+    expectEquals(QB.State:GetPeer("Buddy-Realm").snapshot, nil, "checksum mismatch does not apply snapshot")
+    expectEquals(QB.Comms.incomingTransfers["Buddy-Realm"], nil, "checksum mismatch clears incoming transfer state")
+end
+
+local function testSnapshotEndAppliesValidSnapshot()
+    QB.State:Initialize({})
+    QB.Comms:Initialize()
+
+    local snapshot = makeSnapshot("Buddy-Realm", 4, {
+        makeQuest("id:2", "Quest Two", 12, true, "active", {
+            { text = "Dust: 1/2", current = 1, required = 2, done = false },
+        }),
+    })
+    local serialized = QB.Snapshot:Serialize(snapshot, true)
+    local checksum = QB.Snapshot:Checksum(serialized)
+    local transferId = "transfer-good"
+
+    QB.Comms:HandleSnapshotStart("Buddy-Realm", {
+        transferId,
+        tostring(snapshot.revision),
+        "1",
+        tostring(checksum),
+        tostring(string.len(serialized)),
+    })
+    QB.Comms:HandleSnapshotChunk("Buddy-Realm", { transferId, "1", serialized })
+    QB.Comms:HandleSnapshotEnd("Buddy-Realm", {
+        transferId,
+        tostring(snapshot.revision),
+        tostring(checksum),
+    })
+
+    local peer = QB.State:GetPeer("Buddy-Realm")
+    expectEquals(peer.updating, false, "valid snapshot clears peer updating flag")
+    expectEquals(peer.snapshot.revision, 4, "valid snapshot is applied to peer state")
+    expectEquals(peer.snapshot.quests[1].questKey, "id:2", "valid snapshot preserves quest records")
+end
+
 local function testQuestApiBuildsRetailSnapshot()
     local snapshot = QB.QuestApi:BuildLocalSnapshot(33)
 
@@ -1157,6 +1221,30 @@ local function testTocUsesSingleRetailInterfaceValue()
     expectTrue(string.find(toc, "## Interface: 120001, 110207", 1, true) ~= nil, "toc uses the comma-separated interface header WoW accepts")
 end
 
+local function testBuildQuestRowsRespectsSharedFilterAndSortOrder()
+    local localSnapshot = makeSnapshot("Me", 1, {
+        makeQuest("id:3", "Gamma", 20, false, "active", {}),
+        makeQuest("id:1", "Alpha", 10, true, "active", {}),
+        makeQuest("id:2", "Beta", 10, true, "active", {}),
+    })
+    local peerSnapshot = makeSnapshot("Buddy", 1, {
+        makeQuest("id:2", "Beta", 10, true, "active", {}),
+        makeQuest("id:4", "Delta", 15, false, "active", {}),
+    })
+
+    local allRows = QB.State.BuildQuestRows(localSnapshot, peerSnapshot, false)
+    expectEquals(#allRows.shared, 1, "row builder includes shared quests when filter is disabled")
+    expectEquals(#allRows.mineOnly, 2, "row builder includes local-only quests when filter is disabled")
+    expectEquals(#allRows.buddyOnly, 1, "row builder includes buddy-only quests when filter is disabled")
+    expectEquals(allRows.mineOnly[1].title, "Alpha", "row builder sorts watched quests alphabetically at equal level")
+    expectEquals(allRows.mineOnly[2].title, "Gamma", "row builder sorts unwatched quests after watched quests")
+
+    local sharedOnlyRows = QB.State.BuildQuestRows(localSnapshot, peerSnapshot, true)
+    expectEquals(#sharedOnlyRows.shared, 1, "row builder keeps shared quests when shared-only mode is enabled")
+    expectEquals(#sharedOnlyRows.mineOnly, 0, "row builder hides local-only quests in shared-only mode")
+    expectEquals(#sharedOnlyRows.buddyOnly, 0, "row builder hides buddy-only quests in shared-only mode")
+end
+
 local tests = {
     testProtocolRoundTrip,
     testMalformedMessageRejected,
@@ -1179,11 +1267,14 @@ local tests = {
     testSendSnapshotUsesWhisperAndBoundedChunks,
     testHelloRequestUsesWhisper,
     testSnapshotTransferTimeoutClearsUpdatingState,
+    testSnapshotEndRejectsChecksumMismatch,
+    testSnapshotEndAppliesValidSnapshot,
     testQuestApiBuildsRetailSnapshot,
     testQuestApiFallsBackWhenRetailQuestLogIsEmpty,
     testQuestApiExpandsCollapsedLegacyHeaders,
     testQuestApiRestoresMultipleCollapsedHeaders,
     testQuestApiDetectsAscensionShiftedLayout,
+    testBuildQuestRowsRespectsSharedFilterAndSortOrder,
     testAddonInitializesRetailRuntime,
     testOptionsInitializeWithoutTemplateTextRegion,
     testTocUsesSingleRetailInterfaceValue,
