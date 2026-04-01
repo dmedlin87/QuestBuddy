@@ -638,6 +638,22 @@ local function testNewerHelloMarksPeerUpdating()
     expectEquals(QB.State:GetPeerStatus(QB.State:GetPeer("Buddy-Realm"), 11, 90), "Updating", "newer hello revision marks peer updating")
 end
 
+local function testStateFreshestLivePeerSelectors()
+    QB.State:Initialize({})
+    QB.State:ApplyPeerSnapshot("Stale-Realm", makeSnapshot("Stale-Realm", 1, {}), 10)
+    QB.State:ApplyPeerSnapshot("Fresh-Realm", makeSnapshot("Fresh-Realm", 1, {}), 50)
+    QB.State:MarkPeerOffline("Offline-Realm", 50)
+
+    local selectedName = QB.State:GetFreshestLivePeer(80, 40)
+    expectEquals(selectedName, "Fresh-Realm", "freshest live selector prefers the lowest live age")
+
+    local staleDuration = QB.State:GetStaleDuration(QB.State:GetPeer("Stale-Realm"), 80, 40)
+    expectEquals(staleDuration, 30, "stale duration selector subtracts stale timeout from peer age")
+
+    local thresholds = QB.State:GetStaleThresholds(40)
+    expectEquals(thresholds.staleAtSeconds, 40, "stale thresholds expose configured stale-at value")
+end
+
 local function testFocusedBuddySelection()
     expectEquals(QB.State.SelectFocusedBuddy({ "Mira" }, nil, nil, true), "Mira", "single buddy auto focus")
     expectEquals(QB.State.SelectFocusedBuddy({ "Mira", "Tao" }, "Tao", nil, true), "Tao", "keep current focus")
@@ -925,6 +941,25 @@ local function testSnapshotRequestHonorsTargetName()
     expectTrue(#_G.__sentMessages > 0, "snapshot request targeting this player sends a snapshot")
     expectEquals(_G.__sentMessages[1].distribution, "WHISPER", "targeted snapshot request replies with whisper")
     expectEquals(_G.__sentMessages[1].target, "Buddy-Realm", "targeted snapshot request replies to sender")
+end
+
+local function testRefreshRequestThrottlesRepeatedRequests()
+    QB.State:Initialize({})
+    QB.Comms:Initialize()
+
+    _G.__sentMessages = {}
+    _G.__time = 100
+    local firstSent = QB.Comms:RequestPeerRefresh("Buddy-Realm", "manual")
+    local secondSent = QB.Comms:RequestPeerRefresh("Buddy-Realm", "manual")
+
+    expectEquals(firstSent, true, "first refresh request is sent")
+    expectEquals(secondSent, false, "repeat refresh request inside throttle window is skipped")
+    expectEquals(#_G.__sentMessages, 1, "throttled refresh request does not enqueue extra addon messages")
+
+    _G.__time = 109
+    local thirdSent = QB.Comms:RequestPeerRefresh("Buddy-Realm", "manual")
+    expectEquals(thirdSent, true, "refresh request is allowed again after throttle window")
+    expectEquals(#_G.__sentMessages, 2, "post-throttle refresh request sends a second addon message")
 end
 
 local function testAddonMessageIgnoresNonPartyAndSelfMessages()
@@ -1385,6 +1420,7 @@ local tests = {
     testSignatureIgnoresUpdatedTimestamp,
     testStalePeerHandling,
     testNewerHelloMarksPeerUpdating,
+    testStateFreshestLivePeerSelectors,
     testFocusedBuddySelection,
     testTrackerRenderingDecisions,
     testMainWindowRowBuilding,
@@ -1400,6 +1436,7 @@ local tests = {
     testSendSnapshotUsesWhisperAndBoundedChunks,
     testHelloRequestUsesWhisper,
     testSnapshotRequestHonorsTargetName,
+    testRefreshRequestThrottlesRepeatedRequests,
     testAddonMessageIgnoresNonPartyAndSelfMessages,
     testQueueSnapshotBroadcastReschedulesDuringCooldown,
     testSnapshotTransferTimeoutClearsUpdatingState,

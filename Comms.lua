@@ -11,6 +11,8 @@ Comms.pendingSnapshotTimer = Comms.pendingSnapshotTimer or nil
 Comms.lastSnapshotSentAt = Comms.lastSnapshotSentAt or 0
 Comms.transferSequence = Comms.transferSequence or 0
 Comms.TRANSFER_TIMEOUT_SECONDS = 8
+Comms.REFRESH_REQUEST_THROTTLE_SECONDS = 8
+Comms.lastRefreshRequestAt = Comms.lastRefreshRequestAt or {}
 
 local function now()
     return QB.Compat:GetTime()
@@ -24,6 +26,7 @@ function Comms:Initialize()
     self.incomingTransfers = {}
     self.pendingSnapshotTimer = nil
     self.lastSnapshotSentAt = 0
+    self.lastRefreshRequestAt = {}
 end
 
 function Comms:SendRaw(payload, distribution, target)
@@ -37,8 +40,25 @@ function Comms:BroadcastHello()
     self:SendRaw(QB.Protocol:EncodeHello(revision, questCount), "PARTY")
 end
 
+function Comms:RequestPeerRefresh(targetName, reason)
+    local currentTime = now()
+    local throttleKey = (targetName and targetName ~= "") and targetName or "__party__"
+    local lastRequestedAt = self.lastRefreshRequestAt[throttleKey] or 0
+    if (currentTime - lastRequestedAt) < self.REFRESH_REQUEST_THROTTLE_SECONDS then
+        return false
+    end
+
+    self.lastRefreshRequestAt[throttleKey] = currentTime
+    if targetName and targetName ~= "" then
+        self:SendRaw(QB.Protocol:EncodeSnapshotRequest(targetName, reason or "manual"), "WHISPER", targetName)
+    else
+        self:SendRaw(QB.Protocol:EncodeSnapshotRequest("", reason or "manual"), "PARTY")
+    end
+    return true
+end
+
 function Comms:RequestSnapshots(reason)
-    self:SendRaw(QB.Protocol:EncodeSnapshotRequest("", reason or "manual"), "PARTY")
+    return self:RequestPeerRefresh(nil, reason)
 end
 
 function Comms:SendSnapshot(targetName)

@@ -14,6 +14,8 @@ QB.defaults = {
         autoFocusSingleBuddy = true,
         staleTimeoutSeconds = 90,
         lockWindow = false,
+        enableRecoveryPrompts = true,
+        recoveryPromptSilent = false,
     },
     window = {
         point = "CENTER",
