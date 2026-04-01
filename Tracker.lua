@@ -14,16 +14,10 @@ local math = math
 Tracker.frame = Tracker.frame or nil
 Tracker.rows = Tracker.rows or {}
 
-local STATUS_COLORS = {
-    Live = { r = 0.47, g = 0.82, b = 0.47 },
-    Updating = { r = 0.96, g = 0.82, b = 0.36 },
-    Stale = { r = 0.95, g = 0.56, b = 0.24 },
-    Offline = { r = 0.62, g = 0.62, b = 0.62 },
-}
 local TOOLTIP_HEADER_PREFIX = "QuestBuddy: "
 
 local function getStatusColor(status)
-    return STATUS_COLORS[status] or STATUS_COLORS.Offline
+    return QB.State:GetStatusColor(status)
 end
 
 local function normalizeTooltipText(text)
@@ -208,22 +202,24 @@ function Tracker.BuildRows(localSnapshot, peer, status)
     local rows = {}
     local peerSnapshot = peer and peer.snapshot or nil
     local peerMap = QB.Snapshot:IndexByKey(peerSnapshot)
+    local watchedCount = 0
 
     for _, quest in ipairs((localSnapshot and localSnapshot.quests) or {}) do
         if quest.watched then
+            watchedCount = watchedCount + 1
             local buddyQuest = peerMap[quest.questKey]
             local buddyText
 
             if status == "Stale" then
-                buddyText = "Stale"
+                buddyText = QB.State:GetReasonMessage("stale")
             elseif status == "Updating" then
-                buddyText = "Updating..."
+                buddyText = QB.State:GetReasonMessage("updating")
             elseif status == "Offline" then
-                buddyText = "Offline"
+                buddyText = QB.State:GetReasonMessage("offline")
             elseif buddyQuest then
                 buddyText = QB.Snapshot:SummarizeQuest(buddyQuest)
             else
-                buddyText = "Buddy missing"
+                buddyText = QB.State:GetReasonMessage("not_on_quest")
             end
 
             table.insert(rows, {
@@ -232,6 +228,14 @@ function Tracker.BuildRows(localSnapshot, peer, status)
                 hasBuddyQuest = buddyQuest ~= nil,
             })
         end
+    end
+
+    if watchedCount == 0 and localSnapshot then
+        table.insert(rows, {
+            title = "No tracked quests",
+            buddyText = QB.State:GetReasonMessage("not_on_quest"),
+            hasBuddyQuest = false,
+        })
     end
 
     return rows
@@ -248,13 +252,13 @@ function Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
         local buddyText
 
         if status == "Stale" then
-            buddyText = "Stale"
+            buddyText = QB.State:GetReasonMessage("stale")
         elseif status == "Updating" then
-            buddyText = "Updating..."
+            buddyText = QB.State:GetReasonMessage("updating")
         elseif status == "Offline" then
-            buddyText = "Offline"
+            buddyText = QB.State:GetReasonMessage("offline")
         elseif not buddyQuest then
-            buddyText = "Buddy missing"
+            buddyText = QB.State:GetReasonMessage("not_on_quest")
         elseif #match.objectiveIndices > 0 then
             for _, objectiveIndex in ipairs(match.objectiveIndices) do
                 local objectiveText = summarizeObjective(
@@ -273,7 +277,11 @@ function Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
         end
     end
 
-    return lines
+    if #lines == 0 then
+        return lines, "not_on_quest"
+    end
+
+    return lines, nil
 end
 
 function Tracker:AppendTooltipProgress(tooltip)
@@ -295,17 +303,18 @@ function Tracker:AppendTooltipProgress(tooltip)
         return
     end
 
-    local lines = Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
-    if #lines == 0 then
-        return
-    end
+    local lines, noProgressReason = Tracker.BuildTooltipLines(localSnapshot, peer, status, tooltip)
 
     local statusColor = getStatusColor(status)
     tooltip:AddLine(" ")
     tooltip:AddLine(headerText, statusColor.r, statusColor.g, statusColor.b)
 
-    for _, line in ipairs(lines) do
-        tooltip:AddLine(line, 0.82, 0.82, 0.82, true)
+    if #lines == 0 then
+        tooltip:AddLine(QB.State:GetReasonMessage(noProgressReason or "not_on_quest"), 0.82, 0.82, 0.82, true)
+    else
+        for _, line in ipairs(lines) do
+            tooltip:AddLine(line, 0.82, 0.82, 0.82, true)
+        end
     end
 
     if tooltip.Show then
@@ -417,7 +426,7 @@ function Tracker:Refresh()
     end
 
     local statusColor = getStatusColor(status)
-    self.frame.header:SetText(QB.Compat:Colorize(string.format("%s  %s", focusedBuddy, status), statusColor))
+    self.frame.header:SetText(QB.Compat:Colorize(string.format("%s  %s", focusedBuddy, QB.State:GetStatusLabel(status)), statusColor))
 
     local previousRow = nil
     for index, rowData in ipairs(rows) do
