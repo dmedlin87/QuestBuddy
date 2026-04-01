@@ -11,6 +11,7 @@ local Settings = _G.Settings
 local InterfaceOptionsFramePanelContainer = _G.InterfaceOptionsFramePanelContainer
 local InterfaceOptions_AddCategory = _G.InterfaceOptions_AddCategory
 local InterfaceOptionsFrame_OpenToCategory = _G.InterfaceOptionsFrame_OpenToCategory
+local math = math
 
 Options.panel = Options.panel or nil
 
@@ -52,6 +53,56 @@ local function createCheckbox(parent, label, description, x, y, getter, setter)
     return checkbox
 end
 
+local function createSlider(parent, name, label, lowText, highText, x, y, minValue, maxValue, valueStep, getter, setter)
+    local slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    slider:SetMinMaxValues(minValue, maxValue)
+    slider:SetValueStep(valueStep)
+    slider:SetObeyStepOnDrag(true)
+    slider:SetWidth(220)
+
+    local text = _G[slider:GetName() .. "Text"]
+    if text and text.SetText then
+        text:SetText(label)
+    end
+
+    local low = _G[slider:GetName() .. "Low"]
+    if low and low.SetText then
+        low:SetText(lowText)
+    end
+
+    local high = _G[slider:GetName() .. "High"]
+    if high and high.SetText then
+        high:SetText(highText)
+    end
+
+    slider.valueText = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    slider.valueText:SetPoint("LEFT", slider, "RIGHT", 8, 0)
+
+    slider.isRefreshing = false
+    slider:SetScript("OnValueChanged", function(self, value)
+        local rounded = math.floor((value * 100) + 0.5) / 100
+        if not self.isRefreshing then
+            setter(rounded)
+        end
+        if self.valueText then
+            self.valueText:SetText(string.format("%.2fx", rounded))
+        end
+    end)
+
+    slider.Refresh = function()
+        local currentValue = getter()
+        slider.isRefreshing = true
+        slider:SetValue(currentValue)
+        slider.isRefreshing = false
+        if slider.valueText then
+            slider.valueText:SetText(string.format("%.2fx", currentValue))
+        end
+    end
+
+    return slider
+end
+
 function Options:Initialize()
     if self.panel or not CreateFrame then
         return
@@ -80,12 +131,47 @@ function Options:Initialize()
         function(value) QB:SetOption("enableTrackerOverlay", value); QB:RefreshViews("options") end
     )
 
+    self.panel.unlockOverlay = createCheckbox(
+        self.panel,
+        "Unlock overlay",
+        "Allow dragging the tracker overlay and scaling with mouse-wheel while unlocked.",
+        16,
+        -100,
+        function() return QB:GetOption("unlockTrackerOverlay") end,
+        function(value) QB:SetOption("unlockTrackerOverlay", value); QB:RefreshViews("options") end
+    )
+
+    self.panel.resetOverlayButton = CreateFrame("Button", nil, self.panel, "UIPanelButtonTemplate")
+    self.panel.resetOverlayButton:SetWidth(190)
+    self.panel.resetOverlayButton:SetHeight(22)
+    self.panel.resetOverlayButton:SetPoint("TOPLEFT", self.panel.unlockOverlay, "BOTTOMLEFT", 0, -8)
+    self.panel.resetOverlayButton:SetText("Reset Overlay Position")
+    self.panel.resetOverlayButton:SetScript("OnClick", function()
+        QB:ResetTrackerOverlayPosition()
+        QB:RefreshViews("options")
+    end)
+
+    self.panel.overlayScale = createSlider(
+        self.panel,
+        "QuestBuddyOverlayScaleSlider",
+        "Overlay Scale",
+        "0.70x",
+        "1.60x",
+        16,
+        -166,
+        0.7,
+        1.6,
+        0.01,
+        function() return (QB:GetTrackerOverlayState() and QB:GetTrackerOverlayState().scale) or 1 end,
+        function(value) QB:SetTrackerOverlayScale(value); QB:RefreshViews("options") end
+    )
+
     self.panel.sharedOnly = createCheckbox(
         self.panel,
         "Show only shared quests in window",
         "Hide buddy-only and mine-only sections in the compact window.",
         16,
-        -100,
+        -210,
         function() return QB:GetOption("showOnlySharedQuests") end,
         function(value) QB:SetOption("showOnlySharedQuests", value); QB:RefreshViews("options") end
     )
@@ -95,7 +181,7 @@ function Options:Initialize()
         "Enable party scan board",
         "Show a compact multi-buddy summary panel at the top of the main window.",
         16,
-        -130,
+        -240,
         function() return QB:GetOption("enablePartyBoard") end,
         function(value) QB:SetOption("enablePartyBoard", value); QB:RefreshViews("options") end
     )
@@ -105,7 +191,7 @@ function Options:Initialize()
         "Auto-focus a single buddy",
         "When exactly one QuestBuddy peer is in party, focus them automatically.",
         16,
-        -160,
+        -270,
         function() return QB:GetOption("autoFocusSingleBuddy") end,
         function(value) QB:SetOption("autoFocusSingleBuddy", value); QB.State:ReevaluateFocus(QB.db); QB:RefreshViews("options") end
     )
@@ -115,7 +201,7 @@ function Options:Initialize()
         "Sort shared by largest delta",
         "Prioritize shared quests where one side is furthest ahead in objective progress.",
         16,
-        -160,
+        -300,
         function() return QB:GetOption("sortSharedByLargestDelta") end,
         function(value) QB:SetOption("sortSharedByLargestDelta", value); QB:RefreshViews("options") end
     )
@@ -125,7 +211,7 @@ function Options:Initialize()
         "Lock main window",
         "Prevent dragging the main QuestBuddy window.",
         16,
-        -190,
+        -330,
         function() return QB:GetOption("lockWindow") end,
         function(value) QB:SetOption("lockWindow", value) end
     )
@@ -135,7 +221,7 @@ function Options:Initialize()
         "Enable stale/offline action prompts",
         "Show inline recovery chips when the focused buddy is stale or offline.",
         16,
-        -220,
+        -360,
         function() return QB:GetOption("enableRecoveryPrompts") end,
         function(value) QB:SetOption("enableRecoveryPrompts", value); QB:RefreshViews("options") end
     )
@@ -145,13 +231,13 @@ function Options:Initialize()
         "Silent recovery prompts",
         "Suppress chat feedback when using stale/offline recovery actions.",
         16,
-        -250,
+        -390,
         function() return QB:GetOption("recoveryPromptSilent") end,
         function(value) QB:SetOption("recoveryPromptSilent", value); QB:RefreshViews("options") end
     )
 
     self.panel.timeoutLabel = self.panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -290)
+    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -430)
     self.panel.timeoutLabel:SetText("Stale timeout (seconds)")
 
     self.panel.timeoutBox = CreateFrame("EditBox", nil, self.panel, "InputBoxTemplate")
@@ -174,6 +260,8 @@ function Options:Initialize()
 
     self.panel:SetScript("OnShow", function(panel)
         panel.overlay:Refresh()
+        panel.unlockOverlay:Refresh()
+        panel.overlayScale:Refresh()
         panel.sharedOnly:Refresh()
         panel.partyBoard:Refresh()
         panel.autoFocus:Refresh()
