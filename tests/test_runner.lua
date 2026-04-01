@@ -1444,6 +1444,50 @@ local function testBuildQuestRowsOptionalSharedDeltaSort()
     expectEquals(deltaSortedRows.shared[1].title, "Quest A", "delta sort prioritizes largest objective delta when enabled")
 end
 
+local function testBuildQuestRowsAppliesPresetFiltersAndEmphasis()
+    local localSnapshot = makeSnapshot("Me", 3, {
+        makeQuest("id:watched-ready", "Watched Ready", 10, true, "ready", {}),
+        makeQuest("id:watched-active", "Watched Active", 11, true, "active", {}),
+        makeQuest("id:unwatched-ready", "Unwatched Ready", 12, false, "ready", {}),
+    })
+    local peerSnapshot = makeSnapshot("Buddy", 4, {
+        makeQuest("id:watched-ready", "Watched Ready", 10, true, "active", {}),
+    })
+
+    local rows = QB.State.BuildQuestRows(localSnapshot, peerSnapshot, {
+        watchedOnly = true,
+        readyToTurnIn = true,
+        showStaleOfflineEmphasis = true,
+        showOnlySharedQuests = false,
+        peerStatus = "Stale",
+    })
+
+    expectEquals(#rows.shared, 1, "preset pipeline keeps shared watched+ready rows")
+    expectEquals(rows.shared[1].title, "Watched Ready", "preset pipeline returns the matching shared row")
+    expectEquals(rows.shared[1].buddyEmphasis, "Stale", "stale emphasis metadata is attached centrally")
+    expectEquals(#rows.mineOnly, 0, "preset pipeline filters mine-only rows by watched+ready settings")
+end
+
+local function testRowDisplayPresetPersistsAndResets()
+    resetAddonState()
+    QB.db = QB.Compat:MergeDefaults({}, QB.defaults)
+
+    local preset = QB:GetRowDisplayPreset()
+    preset.watchedOnly = true
+    preset.readyToTurnIn = true
+    preset.sortSharedByLargestDelta = true
+    QB:SetRowDisplayPreset(preset)
+
+    expectEquals(QB:GetOption("sortSharedByLargestDelta"), true, "row preset keeps legacy sort option in sync")
+    expectEquals(QB:GetRowDisplayPreset().watchedOnly, true, "row preset persists watched-only toggle")
+    expectEquals(QB:GetRowDisplayPreset().readyToTurnIn, true, "row preset persists ready toggle")
+
+    QB:ResetRowDisplayPreset()
+    expectEquals(QB:GetRowDisplayPreset().watchedOnly, false, "row preset reset restores watched-only default")
+    expectEquals(QB:GetRowDisplayPreset().readyToTurnIn, false, "row preset reset restores ready default")
+    expectEquals(QB:GetOption("sortSharedByLargestDelta"), false, "row preset reset restores legacy sort default")
+end
+
 local tests = {
     testProtocolRoundTrip,
     testMalformedMessageRejected,
@@ -1482,6 +1526,8 @@ local tests = {
     testBuildQuestRowsRespectsSharedFilterAndSortOrder,
     testBuildQuestRowsIncludesObjectiveComparisonMetadata,
     testBuildQuestRowsOptionalSharedDeltaSort,
+    testBuildQuestRowsAppliesPresetFiltersAndEmphasis,
+    testRowDisplayPresetPersistsAndResets,
     testAddonInitializesRetailRuntime,
     testOptionsInitializeWithoutTemplateTextRegion,
     testTocUsesSingleRetailInterfaceValue,

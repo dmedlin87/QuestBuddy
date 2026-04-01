@@ -37,6 +37,50 @@ local function applyBackdrop(frame)
     frame:SetBackdropBorderColor(0.34, 0.37, 0.42, 1)
 end
 
+local function getCheckboxLabelRegion(checkbox)
+    if checkbox.Text then
+        return checkbox.Text
+    end
+
+    local checkboxName = checkbox.GetName and checkbox:GetName() or checkbox.name
+    if checkboxName and _G[checkboxName .. "Text"] then
+        checkbox.Text = _G[checkboxName .. "Text"]
+        return checkbox.Text
+    end
+
+    if checkbox.CreateFontString then
+        local textRegion = checkbox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        textRegion:SetPoint("LEFT", checkbox, "RIGHT", 0, 1)
+        checkbox.Text = textRegion
+        return textRegion
+    end
+
+    return nil
+end
+
+local function createInlineFilterCheckbox(parent, label, anchor, relative, x, y, optionKey)
+    local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    checkbox:SetPoint(anchor, relative, anchor, x, y)
+    local textRegion = getCheckboxLabelRegion(checkbox)
+    if textRegion and textRegion.SetText then
+        textRegion:SetText(label)
+    end
+
+    checkbox:SetScript("OnClick", function(self)
+        local preset = QB:GetRowDisplayPreset()
+        preset[optionKey] = self:GetChecked() and true or false
+        QB:SetRowDisplayPreset(preset)
+        QB:RefreshViews("row-filter-changed")
+    end)
+
+    checkbox.Refresh = function()
+        local preset = QB:GetRowDisplayPreset()
+        checkbox:SetChecked(preset[optionKey] and true or false)
+    end
+
+    return checkbox
+end
+
 local function formatQuestTitle(row)
     if row.level and row.level > 0 then
         return string.format("[%d] %s", row.level, row.title)
@@ -155,8 +199,8 @@ local function updateContextActions(ui, focusedBuddy, status, peer, now, staleTi
     ui.frame.actionNextLiveButton:Show()
 end
 
-function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared, sortSharedByLargestDelta)
-    local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, showOnlyShared, sortSharedByLargestDelta)
+function UI.BuildDisplayRows(localSnapshot, peer, rowConfig)
+    local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, rowConfig)
     local rows = {}
     local now = QB.Compat:GetTime()
     local peerAgeText = peer and peer.snapshot and formatFreshnessAge(peer.snapshot.createdAt, now) or nil
@@ -176,6 +220,9 @@ function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared, sortSharedByLa
 
             if row.buddy and row.objectiveComparison then
                 buddyText = string.format("%s  (%s • %s)", buddyText, formatDeltaIndicator(row), peerAgeText or "freshness unknown")
+            end
+            if row.buddyEmphasis then
+                buddyText = string.format("%s  [%s DATA]", buddyText, string.upper(row.buddyEmphasis))
             end
 
             table.insert(rows, {
@@ -329,8 +376,42 @@ function UI:Initialize()
     end)
     updateSimulationButton(self.frame.simulateButton)
 
+    self.frame.filtersLabel = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.frame.filtersLabel:SetPoint("TOPLEFT", self.frame.actionRequestButton, "BOTTOMLEFT", 0, -8)
+    self.frame.filtersLabel:SetText("Filters")
+
+    self.frame.filterWatchedOnly = createInlineFilterCheckbox(
+        self.frame,
+        "Watched Only",
+        "TOPLEFT",
+        self.frame.filtersLabel,
+        0,
+        -16,
+        "watchedOnly"
+    )
+
+    self.frame.filterReadyOnly = createInlineFilterCheckbox(
+        self.frame,
+        "Ready to Turn In",
+        "TOPLEFT",
+        self.frame.filterWatchedOnly,
+        0,
+        -22,
+        "readyToTurnIn"
+    )
+
+    self.frame.filterStaleEmphasis = createInlineFilterCheckbox(
+        self.frame,
+        "Show Stale/Offline Emphasis",
+        "TOPLEFT",
+        self.frame.filterReadyOnly,
+        0,
+        -22,
+        "showStaleOfflineEmphasis"
+    )
+
     self.frame.scroll = CreateFrame("ScrollFrame", "QuestBuddyMainScroll", self.frame, "UIPanelScrollFrameTemplate")
-    self.frame.scroll:SetPoint("TOPLEFT", self.frame.actionRequestButton, "BOTTOMLEFT", 0, -10)
+    self.frame.scroll:SetPoint("TOPLEFT", self.frame.filterStaleEmphasis, "BOTTOMLEFT", 0, -10)
     self.frame.scroll:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -30, 16)
 
     self.frame.content = CreateFrame("Frame", nil, self.frame.scroll)
@@ -415,18 +496,23 @@ function UI:Refresh(reason)
     local currentTime = QB.Compat:GetTime()
     local staleTimeout = QB:GetOption("staleTimeoutSeconds")
     local status = QB.State:GetPeerStatus(peer, currentTime, staleTimeout)
+    local rowPreset = QB:GetRowDisplayPreset()
+    rowPreset.showOnlySharedQuests = QB:GetOption("showOnlySharedQuests")
+    rowPreset.peerStatus = status
     local summaryRows = QB.State:GetPeerSummaryRows(currentTime, staleTimeout)
     local rows, buckets = UI.BuildDisplayRows(
         QB.State:GetLocalSnapshot(),
         peer,
-        QB:GetOption("showOnlySharedQuests"),
-        QB:GetOption("sortSharedByLargestDelta")
+        rowPreset
     )
     local statusColor = STATUS_COLORS[status] or STATUS_COLORS.Offline
     local partyBoardEnabled = QB:GetOption("enablePartyBoard")
 
     UIDropDownMenu_Initialize(self.frame.dropdown, buildDropdownMenu)
     updateSimulationButton(self.frame.simulateButton)
+    self.frame.filterWatchedOnly:Refresh()
+    self.frame.filterReadyOnly:Refresh()
+    self.frame.filterStaleEmphasis:Refresh()
 
     UIDropDownMenu_SetText(self.frame.dropdown, focusedBuddy or "No buddy")
 

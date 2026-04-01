@@ -13,6 +13,12 @@ QB.defaults = {
         enablePartyBoard = true,
         showOnlySharedQuests = false,
         sortSharedByLargestDelta = false,
+        rowDisplayPreset = {
+            watchedOnly = false,
+            readyToTurnIn = false,
+            showStaleOfflineEmphasis = false,
+            sortSharedByLargestDelta = false,
+        },
         autoFocusSingleBuddy = true,
         staleTimeoutSeconds = 90,
         lockWindow = false,
@@ -53,6 +59,32 @@ end
 
 function QB:SetOption(key, value)
     self.db.options[key] = value
+end
+
+function QB:GetRowDisplayPreset()
+    local options = self.db and self.db.options or {}
+    local defaults = self.defaults and self.defaults.options and self.defaults.options.rowDisplayPreset or {}
+    local preset = QB.Compat:MergeDefaults(options.rowDisplayPreset or {}, defaults)
+
+    preset.sortSharedByLargestDelta = (preset.sortSharedByLargestDelta or false) or (options.sortSharedByLargestDelta or false)
+    options.rowDisplayPreset = preset
+
+    return preset
+end
+
+function QB:SetRowDisplayPreset(preset)
+    local current = self:GetRowDisplayPreset()
+    for key, value in pairs(preset or {}) do
+        current[key] = value and true or false
+    end
+    self.db.options.rowDisplayPreset = current
+    self.db.options.sortSharedByLargestDelta = current.sortSharedByLargestDelta and true or false
+end
+
+function QB:ResetRowDisplayPreset()
+    local defaults = self.defaults and self.defaults.options and self.defaults.options.rowDisplayPreset or {}
+    self.db.options.rowDisplayPreset = QB.Compat:CopyTable(defaults)
+    self.db.options.sortSharedByLargestDelta = defaults.sortSharedByLargestDelta and true or false
 end
 
 function QB:GetWindowState()
