@@ -90,5 +90,11 @@ The zip is built from the runtime files declared in `QuestBuddy.toc`, staged int
 To build the release assets locally:
 
 ```powershell
-./scripts/Build-AscensionRelease.ps1 -Version 1.0.0
+./scripts/Build-AscensionRelease.ps1 -ExpectedVersion 1.0.1
+```
+
+If you only want to validate packaging and manifest generation without enforcing a specific expected version:
+
+```powershell
+./scripts/Build-AscensionRelease.ps1 -OutputDir release-assets-local
 ```
