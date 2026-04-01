@@ -17,13 +17,6 @@ local BackdropTemplate = _G.BackdropTemplateMixin and "BackdropTemplate" or nil
 UI.frame = UI.frame or nil
 UI.rows = UI.rows or {}
 
-local STATUS_COLORS = {
-    Live = { r = 0.47, g = 0.82, b = 0.47 },
-    Updating = { r = 0.96, g = 0.82, b = 0.36 },
-    Stale = { r = 0.95, g = 0.56, b = 0.24 },
-    Offline = { r = 0.62, g = 0.62, b = 0.62 },
-}
-
 local function applyBackdrop(frame)
     frame:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -199,21 +192,27 @@ local function updateContextActions(ui, focusedBuddy, status, peer, now, staleTi
     ui.frame.actionNextLiveButton:Show()
 end
 
-function UI.BuildDisplayRows(localSnapshot, peer, rowConfig)
+function UI.BuildDisplayRows(localSnapshot, peer, rowConfig, emptyReason)
     local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, rowConfig)
     local rows = {}
     local now = QB.Compat:GetTime()
     local peerAgeText = peer and peer.snapshot and formatFreshnessAge(peer.snapshot.createdAt, now) or nil
 
     local function appendSection(sectionTitle, sectionRows)
-        if #sectionRows == 0 then
-            return
-        end
-
         table.insert(rows, {
             kind = "header",
             text = sectionTitle,
         })
+
+        if #sectionRows == 0 then
+            table.insert(rows, {
+                kind = "quest",
+                title = "No quest rows",
+                myText = QB.State:GetReasonMessage(emptyReason or "not_on_quest"),
+                buddyText = "Tip: sync with your buddy and track a shared quest.",
+            })
+            return
+        end
 
         for _, row in ipairs(sectionRows) do
             local buddyText = row.buddy and ("Buddy: " .. QB.Snapshot:SummarizeQuest(row.buddy)) or "Buddy: Missing"
@@ -495,6 +494,7 @@ function UI:Refresh(reason)
     local peer = focusedBuddy and QB.State:GetPeer(focusedBuddy) or nil
     local currentTime = QB.Compat:GetTime()
     local staleTimeout = QB:GetOption("staleTimeoutSeconds")
+    local peerReason = QB.State:ResolvePeerReason(peer, currentTime, staleTimeout)
     local status = QB.State:GetPeerStatus(peer, currentTime, staleTimeout)
     local rowPreset = QB:GetRowDisplayPreset()
     rowPreset.showOnlySharedQuests = QB:GetOption("showOnlySharedQuests")
@@ -503,9 +503,10 @@ function UI:Refresh(reason)
     local rows, buckets = UI.BuildDisplayRows(
         QB.State:GetLocalSnapshot(),
         peer,
-        rowPreset
+        rowPreset,
+        peerReason
     )
-    local statusColor = STATUS_COLORS[status] or STATUS_COLORS.Offline
+    local statusColor = QB.State:GetStatusColor(status)
     local partyBoardEnabled = QB:GetOption("enablePartyBoard")
 
     UIDropDownMenu_Initialize(self.frame.dropdown, buildDropdownMenu)
@@ -517,9 +518,9 @@ function UI:Refresh(reason)
     UIDropDownMenu_SetText(self.frame.dropdown, focusedBuddy or "No buddy")
 
     if focusedBuddy then
-        self.frame.statusText:SetText(QB.Compat:Colorize(string.format("%s  %s", focusedBuddy, status), statusColor))
+        self.frame.statusText:SetText(QB.Compat:Colorize(string.format("%s  %s", focusedBuddy, QB.State:GetStatusLabel(status)), statusColor))
     else
-        self.frame.statusText:SetText("No active QuestBuddy peers")
+        self.frame.statusText:SetText(QB.State:GetReasonMessage("no_qb_peer"))
     end
 
     if partyBoardEnabled then
@@ -545,7 +546,7 @@ function UI:Refresh(reason)
     updateContextActions(self, focusedBuddy, status, peer, currentTime, staleTimeout)
 
     if #rows == 0 then
-        local emptyText = focusedBuddy and "No quest rows yet" or "Join a party with another QuestBuddy user"
+        local emptyText = QB.State:GetReasonMessage(focusedBuddy and peerReason or "no_qb_peer")
 
         if focusedBuddy and QB.State:IsSimulatedPeer(focusedBuddy) then
             emptyText = "No local quests found to simulate"

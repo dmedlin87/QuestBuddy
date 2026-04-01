@@ -6,6 +6,25 @@ QB.State = QB.State or {}
 
 local State = QB.State
 local SIMULATED_BUDDY_NAME = "Simulated Buddy"
+local STATUS_COLORS = {
+    Live = { r = 0.47, g = 0.82, b = 0.47 },
+    Updating = { r = 0.96, g = 0.82, b = 0.36 },
+    Stale = { r = 0.95, g = 0.56, b = 0.24 },
+    Offline = { r = 0.62, g = 0.62, b = 0.62 },
+}
+local STATUS_LABELS = {
+    Live = "Live",
+    Updating = "Updating",
+    Stale = "Stale",
+    Offline = "Offline",
+}
+local REASON_MESSAGES = {
+    no_qb_peer = "No QuestBuddy peer selected. Focus a buddy from the dropdown.",
+    offline = "Buddy is offline. Ask them to come online and share updates.",
+    stale = "Buddy data is stale. Click Refresh or Request Update.",
+    updating = "Waiting for buddy data. Ask your buddy to run /qb refresh.",
+    not_on_quest = "No matching quest progress yet. Track a shared quest first.",
+}
 
 State.session = State.session or nil
 
@@ -209,23 +228,47 @@ function State:PrunePeers(activePeerSet, now)
 end
 
 function State:GetPeerStatus(peer, now, staleTimeout)
+    local reason = self:ResolvePeerReason(peer, now, staleTimeout)
+    if reason == "stale" then
+        return "Stale"
+    elseif reason == "updating" then
+        return "Updating"
+    elseif reason == "live" then
+        return "Live"
+    end
+    return "Offline"
+end
+
+function State:ResolvePeerReason(peer, now, staleTimeout)
     if not peer then
-        return "Offline"
+        return "no_qb_peer"
     end
 
     if not peer.online then
-        return "Offline"
+        return "offline"
     end
 
     if peer.updating or not peer.snapshot then
-        return "Updating"
+        return "updating"
     end
 
-    if (now - (peer.lastUpdate or 0)) > staleTimeout then
-        return "Stale"
+    if (tonumber(now) or 0) - (tonumber(peer.lastUpdate) or 0) > (tonumber(staleTimeout) or 0) then
+        return "stale"
     end
 
-    return "Live"
+    return "live"
+end
+
+function State:GetStatusColor(status)
+    return STATUS_COLORS[status] or STATUS_COLORS.Offline
+end
+
+function State:GetStatusLabel(status)
+    return STATUS_LABELS[status] or STATUS_LABELS.Offline
+end
+
+function State:GetReasonMessage(reason)
+    return REASON_MESSAGES[reason] or REASON_MESSAGES.not_on_quest
 end
 
 function State:GetPeerFreshnessAge(peer, now)
