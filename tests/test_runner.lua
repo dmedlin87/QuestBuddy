@@ -1030,7 +1030,7 @@ local function testQueueSnapshotBroadcastReschedulesDuringCooldown()
     QB.Compat.IsInParty = function()
         return true
     end
-    QB.Comms.SendSnapshot = function()
+    QB.Comms.SendSnapshot = function(_, _targetName)
         sendCount = sendCount + 1
         return true
     end
