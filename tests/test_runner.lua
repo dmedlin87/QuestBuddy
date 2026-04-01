@@ -1327,6 +1327,57 @@ local function testBuildQuestRowsRespectsSharedFilterAndSortOrder()
     expectEquals(#sharedOnlyRows.buddyOnly, 0, "row builder hides buddy-only quests in shared-only mode")
 end
 
+local function testBuildQuestRowsIncludesObjectiveComparisonMetadata()
+    local localSnapshot = makeSnapshot("Me", 10, {
+        makeQuest("id:shared", "Shared Quest", 10, true, "active", {
+            { text = "Apples", current = 2, required = 6, done = false },
+            { text = "Dust", current = 4, required = 10, done = false },
+        }),
+    })
+    local peerSnapshot = makeSnapshot("Buddy", 11, {
+        makeQuest("id:shared", "Shared Quest", 10, true, "active", {
+            { text = "Apples", current = 5, required = 6, done = false },
+            { text = "Dust", current = 1, required = 10, done = false },
+        }),
+    })
+
+    local rows = QB.State.BuildQuestRows(localSnapshot, peerSnapshot, true)
+    expectEquals(#rows.shared, 1, "shared row exists for objective comparison metadata")
+    expectEquals(#rows.shared[1].objectiveComparison, 2, "shared row includes objective-level comparison metadata")
+    expectEquals(rows.shared[1].objectiveComparison[1].my_count, 2, "comparison metadata includes my count")
+    expectEquals(rows.shared[1].objectiveComparison[1].buddy_count, 5, "comparison metadata includes buddy count")
+    expectEquals(rows.shared[1].objectiveComparison[1].delta, 3, "comparison metadata includes objective delta")
+    expectEquals(rows.shared[1].objectiveComparison[1].ahead_side, "buddy", "comparison metadata includes objective leader")
+    expectEquals(rows.shared[1].objectiveComparison[2].ahead_side, "me", "comparison metadata marks me when I lead objective progress")
+    expectEquals(rows.shared[1].delta, 0, "quest delta aggregates objective-level deltas")
+    expectEquals(rows.shared[1].ahead_side, "even", "quest leader is even when aggregate delta is zero")
+end
+
+local function testBuildQuestRowsOptionalSharedDeltaSort()
+    local localSnapshot = makeSnapshot("Me", 3, {
+        makeQuest("id:a", "Quest A", 20, true, "active", {
+            { text = "A", current = 3, required = 10, done = false },
+        }),
+        makeQuest("id:b", "Quest B", 10, true, "active", {
+            { text = "B", current = 2, required = 10, done = false },
+        }),
+    })
+    local peerSnapshot = makeSnapshot("Buddy", 4, {
+        makeQuest("id:a", "Quest A", 20, true, "active", {
+            { text = "A", current = 9, required = 10, done = false },
+        }),
+        makeQuest("id:b", "Quest B", 10, true, "active", {
+            { text = "B", current = 3, required = 10, done = false },
+        }),
+    })
+
+    local defaultRows = QB.State.BuildQuestRows(localSnapshot, peerSnapshot, true, false)
+    expectEquals(defaultRows.shared[1].title, "Quest B", "default shared ordering remains existing watched/level/title ordering")
+
+    local deltaSortedRows = QB.State.BuildQuestRows(localSnapshot, peerSnapshot, true, true)
+    expectEquals(deltaSortedRows.shared[1].title, "Quest A", "delta sort prioritizes largest objective delta when enabled")
+end
+
 local tests = {
     testProtocolRoundTrip,
     testMalformedMessageRejected,
@@ -1360,6 +1411,8 @@ local tests = {
     testQuestApiRestoresMultipleCollapsedHeaders,
     testQuestApiDetectsAscensionShiftedLayout,
     testBuildQuestRowsRespectsSharedFilterAndSortOrder,
+    testBuildQuestRowsIncludesObjectiveComparisonMetadata,
+    testBuildQuestRowsOptionalSharedDeltaSort,
     testAddonInitializesRetailRuntime,
     testOptionsInitializeWithoutTemplateTextRegion,
     testTocUsesSingleRetailInterfaceValue,

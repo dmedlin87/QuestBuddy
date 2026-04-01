@@ -44,6 +44,34 @@ local function formatQuestTitle(row)
     return row.title
 end
 
+local function formatDeltaIndicator(row)
+    local delta = row and row.delta or 0
+    if delta == 0 then
+        return "Even"
+    end
+
+    local amount = math.abs(delta)
+    if delta > 0 then
+        return string.format("+%d Buddy", amount)
+    end
+    return string.format("+%d Me", amount)
+end
+
+local function formatFreshnessAge(snapshotCreatedAt, now)
+    local ageSeconds = math.max(0, math.floor((now or 0) - (tonumber(snapshotCreatedAt) or 0)))
+    if ageSeconds < 60 then
+        return string.format("%ds old", ageSeconds)
+    end
+
+    local minutes = math.floor(ageSeconds / 60)
+    if minutes < 60 then
+        return string.format("%dm old", minutes)
+    end
+
+    local hours = math.floor(minutes / 60)
+    return string.format("%dh old", hours)
+end
+
 local function buildDropdownMenu(_, level)
     local peers = QB.State:GetOrderedPeerNames(true)
     if #peers == 0 then
@@ -82,9 +110,11 @@ local function updateSimulationButton(button)
     end
 end
 
-function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared)
-    local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, showOnlyShared)
+function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared, sortSharedByLargestDelta)
+    local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, showOnlyShared, sortSharedByLargestDelta)
     local rows = {}
+    local now = QB.Compat:GetTime()
+    local peerAgeText = peer and peer.snapshot and formatFreshnessAge(peer.snapshot.createdAt, now) or nil
 
     local function appendSection(sectionTitle, sectionRows)
         if #sectionRows == 0 then
@@ -97,11 +127,17 @@ function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared)
         })
 
         for _, row in ipairs(sectionRows) do
+            local buddyText = row.buddy and ("Buddy: " .. QB.Snapshot:SummarizeQuest(row.buddy)) or "Buddy: Missing"
+
+            if row.buddy and row.objectiveComparison then
+                buddyText = string.format("%s  (%s • %s)", buddyText, formatDeltaIndicator(row), peerAgeText or "freshness unknown")
+            end
+
             table.insert(rows, {
                 kind = "quest",
                 title = formatQuestTitle(row),
                 myText = row.mine and ("Me: " .. QB.Snapshot:SummarizeQuest(row.mine)) or "Me: Missing",
-                buddyText = row.buddy and ("Buddy: " .. QB.Snapshot:SummarizeQuest(row.buddy)) or "Buddy: Missing",
+                buddyText = buddyText,
             })
         end
     end
@@ -272,7 +308,12 @@ function UI:Refresh(reason)
     local focusedBuddy = QB.State:GetFocusedBuddy()
     local peer = focusedBuddy and QB.State:GetPeer(focusedBuddy) or nil
     local status = QB.State:GetPeerStatus(peer, QB.Compat:GetTime(), QB:GetOption("staleTimeoutSeconds"))
-    local rows, buckets = UI.BuildDisplayRows(QB.State:GetLocalSnapshot(), peer, QB:GetOption("showOnlySharedQuests"))
+    local rows, buckets = UI.BuildDisplayRows(
+        QB.State:GetLocalSnapshot(),
+        peer,
+        QB:GetOption("showOnlySharedQuests"),
+        QB:GetOption("sortSharedByLargestDelta")
+    )
     local statusColor = STATUS_COLORS[status] or STATUS_COLORS.Offline
 
     UIDropDownMenu_Initialize(self.frame.dropdown, buildDropdownMenu)

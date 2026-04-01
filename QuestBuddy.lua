@@ -10,6 +10,7 @@ QB.defaults = {
     options = {
         enableTrackerOverlay = true,
         showOnlySharedQuests = false,
+        sortSharedByLargestDelta = false,
         autoFocusSingleBuddy = true,
         staleTimeoutSeconds = 90,
         lockWindow = false,
