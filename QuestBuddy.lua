@@ -9,6 +9,7 @@ local SlashCmdList = _G.SlashCmdList
 QB.defaults = {
     options = {
         enableTrackerOverlay = true,
+        enablePartyBoard = true,
         showOnlySharedQuests = false,
         autoFocusSingleBuddy = true,
         staleTimeoutSeconds = 90,

@@ -82,6 +82,25 @@ local function updateSimulationButton(button)
     end
 end
 
+local function buildPartyBoardText(summaryRows)
+    if #summaryRows == 0 then
+        return "No buddies found."
+    end
+
+    local lines = {}
+    for _, row in ipairs(summaryRows) do
+        table.insert(lines, string.format(
+            "%s | %s | Shared %d | Ready %d",
+            row.name or "Unknown",
+            row.status or "Offline",
+            row.sharedCount or 0,
+            row.readyCount or 0
+        ))
+    end
+
+    return table.concat(lines, "\n")
+end
+
 function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared)
     local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, showOnlyShared)
     local rows = {}
@@ -149,11 +168,22 @@ function UI:Initialize()
     self.frame.title:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 14, -14)
     self.frame.title:SetText("QuestBuddy")
 
+    self.frame.partyBoardLabel = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.frame.partyBoardLabel:SetPoint("TOPLEFT", self.frame.title, "BOTTOMLEFT", 0, -14)
+    self.frame.partyBoardLabel:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -14, -14)
+    self.frame.partyBoardLabel:SetJustifyH("LEFT")
+    self.frame.partyBoardLabel:SetText("Party Scan")
+
+    self.frame.partyBoardText = self.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    self.frame.partyBoardText:SetPoint("TOPLEFT", self.frame.partyBoardLabel, "BOTTOMLEFT", 0, -4)
+    self.frame.partyBoardText:SetPoint("TOPRIGHT", self.frame.partyBoardLabel, "TOPRIGHT", 0, -4)
+    self.frame.partyBoardText:SetJustifyH("LEFT")
+
     self.frame.close = CreateFrame("Button", nil, self.frame, "UIPanelCloseButton")
     self.frame.close:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -4, -4)
 
     self.frame.focusLabel = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.frame.focusLabel:SetPoint("TOPLEFT", self.frame.title, "BOTTOMLEFT", 0, -14)
+    self.frame.focusLabel:SetPoint("TOPLEFT", self.frame.partyBoardText, "BOTTOMLEFT", 0, -16)
     self.frame.focusLabel:SetText("Focused buddy")
 
     self.frame.dropdown = CreateFrame("Frame", "QuestBuddyBuddyDropdown", self.frame, "UIDropDownMenuTemplate")
@@ -271,9 +301,13 @@ function UI:Refresh(reason)
 
     local focusedBuddy = QB.State:GetFocusedBuddy()
     local peer = focusedBuddy and QB.State:GetPeer(focusedBuddy) or nil
-    local status = QB.State:GetPeerStatus(peer, QB.Compat:GetTime(), QB:GetOption("staleTimeoutSeconds"))
+    local now = QB.Compat:GetTime()
+    local staleTimeout = QB:GetOption("staleTimeoutSeconds")
+    local status = QB.State:GetPeerStatus(peer, now, staleTimeout)
+    local summaryRows = QB.State:GetPeerSummaryRows(now, staleTimeout)
     local rows, buckets = UI.BuildDisplayRows(QB.State:GetLocalSnapshot(), peer, QB:GetOption("showOnlySharedQuests"))
     local statusColor = STATUS_COLORS[status] or STATUS_COLORS.Offline
+    local partyBoardEnabled = QB:GetOption("enablePartyBoard")
 
     UIDropDownMenu_Initialize(self.frame.dropdown, buildDropdownMenu)
     updateSimulationButton(self.frame.simulateButton)
@@ -284,6 +318,19 @@ function UI:Refresh(reason)
         self.frame.statusText:SetText(QB.Compat:Colorize(string.format("%s  %s", focusedBuddy, status), statusColor))
     else
         self.frame.statusText:SetText("No active QuestBuddy peers")
+    end
+
+    if partyBoardEnabled then
+        self.frame.partyBoardLabel:Show()
+        self.frame.partyBoardText:Show()
+        self.frame.partyBoardText:SetText(buildPartyBoardText(summaryRows))
+        self.frame.focusLabel:ClearAllPoints()
+        self.frame.focusLabel:SetPoint("TOPLEFT", self.frame.partyBoardText, "BOTTOMLEFT", 0, -16)
+    else
+        self.frame.partyBoardLabel:Hide()
+        self.frame.partyBoardText:Hide()
+        self.frame.focusLabel:ClearAllPoints()
+        self.frame.focusLabel:SetPoint("TOPLEFT", self.frame.title, "BOTTOMLEFT", 0, -14)
     end
 
     self.frame.countsText:SetText(string.format(

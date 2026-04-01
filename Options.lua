@@ -90,12 +90,22 @@ function Options:Initialize()
         function(value) QB:SetOption("showOnlySharedQuests", value); QB:RefreshViews("options") end
     )
 
+    self.panel.partyBoard = createCheckbox(
+        self.panel,
+        "Enable party scan board",
+        "Show a compact multi-buddy summary panel at the top of the main window.",
+        16,
+        -130,
+        function() return QB:GetOption("enablePartyBoard") end,
+        function(value) QB:SetOption("enablePartyBoard", value); QB:RefreshViews("options") end
+    )
+
     self.panel.autoFocus = createCheckbox(
         self.panel,
         "Auto-focus a single buddy",
         "When exactly one QuestBuddy peer is in party, focus them automatically.",
         16,
-        -130,
+        -160,
         function() return QB:GetOption("autoFocusSingleBuddy") end,
         function(value) QB:SetOption("autoFocusSingleBuddy", value); QB.State:ReevaluateFocus(QB.db); QB:RefreshViews("options") end
     )
@@ -105,13 +115,13 @@ function Options:Initialize()
         "Lock main window",
         "Prevent dragging the main QuestBuddy window.",
         16,
-        -160,
+        -190,
         function() return QB:GetOption("lockWindow") end,
         function(value) QB:SetOption("lockWindow", value) end
     )
 
     self.panel.timeoutLabel = self.panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -210)
+    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -240)
     self.panel.timeoutLabel:SetText("Stale timeout (seconds)")
 
     self.panel.timeoutBox = CreateFrame("EditBox", nil, self.panel, "InputBoxTemplate")
@@ -135,6 +145,7 @@ function Options:Initialize()
     self.panel:SetScript("OnShow", function(panel)
         panel.overlay:Refresh()
         panel.sharedOnly:Refresh()
+        panel.partyBoard:Refresh()
         panel.autoFocus:Refresh()
         panel.lockWindow:Refresh()
         panel.timeoutBox:SetText(tostring(QB:GetOption("staleTimeoutSeconds") or 90))

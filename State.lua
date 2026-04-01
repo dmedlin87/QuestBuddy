@@ -239,6 +239,38 @@ function State:GetOrderedPeerNames(activeOnly)
     return names
 end
 
+function State:GetPeerSummaryRows(now, staleTimeout)
+    local rows = {}
+    local localMap = QB.Snapshot:IndexByKey(self:GetLocalSnapshot())
+    local timeout = staleTimeout or 90
+    local timestamp = now or QB.Compat:GetTime()
+
+    for _, name in ipairs(self:GetOrderedPeerNames(false)) do
+        local peer = self:GetPeer(name)
+        local status = self:GetPeerStatus(peer, timestamp, timeout)
+        local sharedCount = 0
+        local readyCount = 0
+
+        for _, quest in ipairs((peer and peer.snapshot and peer.snapshot.quests) or {}) do
+            if localMap[quest.questKey] then
+                sharedCount = sharedCount + 1
+            end
+            if quest.status == "ready" then
+                readyCount = readyCount + 1
+            end
+        end
+
+        table.insert(rows, {
+            name = name,
+            status = status,
+            sharedCount = sharedCount,
+            readyCount = readyCount,
+        })
+    end
+
+    return rows
+end
+
 function State.SelectFocusedBuddy(peerNames, currentFocus, lastFocusedBuddy, autoFocusSingle)
     local available = {}
     for _, name in ipairs(peerNames or {}) do
