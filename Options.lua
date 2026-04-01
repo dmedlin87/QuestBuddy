@@ -110,6 +110,16 @@ function Options:Initialize()
         function(value) QB:SetOption("autoFocusSingleBuddy", value); QB.State:ReevaluateFocus(QB.db); QB:RefreshViews("options") end
     )
 
+    self.panel.sortSharedDelta = createCheckbox(
+        self.panel,
+        "Sort shared by largest delta",
+        "Prioritize shared quests where one side is furthest ahead in objective progress.",
+        16,
+        -160,
+        function() return QB:GetOption("sortSharedByLargestDelta") end,
+        function(value) QB:SetOption("sortSharedByLargestDelta", value); QB:RefreshViews("options") end
+    )
+
     self.panel.lockWindow = createCheckbox(
         self.panel,
         "Lock main window",
@@ -147,6 +157,7 @@ function Options:Initialize()
         panel.sharedOnly:Refresh()
         panel.partyBoard:Refresh()
         panel.autoFocus:Refresh()
+        panel.sortSharedDelta:Refresh()
         panel.lockWindow:Refresh()
         panel.timeoutBox:SetText(tostring(QB:GetOption("staleTimeoutSeconds") or 90))
     end)
