@@ -130,8 +130,28 @@ function Options:Initialize()
         function(value) QB:SetOption("lockWindow", value) end
     )
 
+    self.panel.recoveryPrompts = createCheckbox(
+        self.panel,
+        "Enable stale/offline action prompts",
+        "Show inline recovery chips when the focused buddy is stale or offline.",
+        16,
+        -220,
+        function() return QB:GetOption("enableRecoveryPrompts") end,
+        function(value) QB:SetOption("enableRecoveryPrompts", value); QB:RefreshViews("options") end
+    )
+
+    self.panel.recoverySilent = createCheckbox(
+        self.panel,
+        "Silent recovery prompts",
+        "Suppress chat feedback when using stale/offline recovery actions.",
+        16,
+        -250,
+        function() return QB:GetOption("recoveryPromptSilent") end,
+        function(value) QB:SetOption("recoveryPromptSilent", value); QB:RefreshViews("options") end
+    )
+
     self.panel.timeoutLabel = self.panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -240)
+    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -290)
     self.panel.timeoutLabel:SetText("Stale timeout (seconds)")
 
     self.panel.timeoutBox = CreateFrame("EditBox", nil, self.panel, "InputBoxTemplate")
@@ -159,6 +179,8 @@ function Options:Initialize()
         panel.autoFocus:Refresh()
         panel.sortSharedDelta:Refresh()
         panel.lockWindow:Refresh()
+        panel.recoveryPrompts:Refresh()
+        panel.recoverySilent:Refresh()
         panel.timeoutBox:SetText(tostring(QB:GetOption("staleTimeoutSeconds") or 90))
     end)
 

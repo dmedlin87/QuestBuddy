@@ -228,6 +228,50 @@ function State:GetPeerStatus(peer, now, staleTimeout)
     return "Live"
 end
 
+function State:GetPeerFreshnessAge(peer, now)
+    if not peer or not peer.lastUpdate then
+        return nil
+    end
+    return math.max(0, (tonumber(now) or 0) - (tonumber(peer.lastUpdate) or 0))
+end
+
+function State:GetStaleDuration(peer, now, staleTimeout)
+    local age = self:GetPeerFreshnessAge(peer, now)
+    if not age then
+        return nil
+    end
+
+    local threshold = tonumber(staleTimeout) or 0
+    return math.max(0, age - threshold)
+end
+
+function State:GetStaleThresholds(staleTimeout)
+    local threshold = tonumber(staleTimeout) or 0
+    return {
+        freshUnderSeconds = math.max(0, threshold),
+        staleAtSeconds = math.max(0, threshold),
+    }
+end
+
+function State:GetFreshestLivePeer(now, staleTimeout, excludeName)
+    local freshestName = nil
+    local freshestPeer = nil
+    local freshestAge = nil
+
+    for name, peer in pairs(self:GetPeers()) do
+        if name ~= excludeName and self:GetPeerStatus(peer, now, staleTimeout) == "Live" then
+            local age = self:GetPeerFreshnessAge(peer, now) or math.huge
+            if freshestAge == nil or age < freshestAge then
+                freshestAge = age
+                freshestName = name
+                freshestPeer = peer
+            end
+        end
+    end
+
+    return freshestName, freshestPeer
+end
+
 function State:GetOrderedPeerNames(activeOnly)
     local names = {}
     for name, peer in pairs(self:GetPeers()) do

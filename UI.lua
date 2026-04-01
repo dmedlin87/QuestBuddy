@@ -129,8 +129,34 @@ local function buildPartyBoardText(summaryRows)
     return table.concat(lines, "\n")
 end
 
-function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared)
-    local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, showOnlyShared)
+local function updateContextActions(ui, focusedBuddy, status, peer, now, staleTimeout)
+    if not ui.frame or not ui.frame.actionHint then
+        return
+    end
+
+    ui.frame.actionHint:SetText("")
+    ui.frame.actionRequestButton:Hide()
+    ui.frame.actionNextLiveButton:Hide()
+
+    if not QB:GetOption("enableRecoveryPrompts") then
+        return
+    end
+
+    if not focusedBuddy or (status ~= "Stale" and status ~= "Offline") then
+        return
+    end
+
+    local thresholds = QB.State:GetStaleThresholds(staleTimeout)
+    local staleFor = QB.State:GetStaleDuration(peer, now, staleTimeout) or 0
+    local staleHint = status == "Stale" and string.format(" · stale +%ds", staleFor) or ""
+
+    ui.frame.actionHint:SetText(string.format("Recovery actions (stale >= %ds%s)", thresholds.staleAtSeconds or 0, staleHint))
+    ui.frame.actionRequestButton:Show()
+    ui.frame.actionNextLiveButton:Show()
+end
+
+function UI.BuildDisplayRows(localSnapshot, peer, showOnlyShared, sortSharedByLargestDelta)
+    local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, showOnlyShared, sortSharedByLargestDelta)
     local rows = {}
     local now = QB.Compat:GetTime()
     local peerAgeText = peer and peer.snapshot and formatFreshnessAge(peer.snapshot.createdAt, now) or nil
@@ -236,6 +262,55 @@ function UI:Initialize()
     self.frame.countsText:SetPoint("TOPRIGHT", self.frame.statusText, "TOPRIGHT", 0, -4)
     self.frame.countsText:SetJustifyH("LEFT")
 
+    self.frame.actionHint = self.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    self.frame.actionHint:SetPoint("TOPLEFT", self.frame.countsText, "BOTTOMLEFT", 0, -4)
+    self.frame.actionHint:SetPoint("TOPRIGHT", self.frame.countsText, "TOPRIGHT", 0, -4)
+    self.frame.actionHint:SetJustifyH("LEFT")
+    self.frame.actionHint:SetText("")
+
+    self.frame.actionRequestButton = CreateFrame("Button", nil, self.frame, "UIPanelButtonTemplate")
+    self.frame.actionRequestButton:SetWidth(108)
+    self.frame.actionRequestButton:SetHeight(20)
+    self.frame.actionRequestButton:SetPoint("TOPLEFT", self.frame.actionHint, "BOTTOMLEFT", 0, -4)
+    self.frame.actionRequestButton:SetText("Request Update")
+    self.frame.actionRequestButton:SetScript("OnClick", function()
+        local buddy = QB.State:GetFocusedBuddy()
+        if not buddy then
+            return
+        end
+        local sent = QB.Comms:RequestPeerRefresh(buddy, "recovery")
+        if not QB:GetOption("recoveryPromptSilent") then
+            if sent then
+                QB.Compat:Printf("QuestBuddy: requested fresh snapshot from %s.", buddy)
+            else
+                QB.Compat:Printf("QuestBuddy: request to %s throttled; try again shortly.", buddy)
+            end
+        end
+    end)
+    self.frame.actionRequestButton:Hide()
+
+    self.frame.actionNextLiveButton = CreateFrame("Button", nil, self.frame, "UIPanelButtonTemplate")
+    self.frame.actionNextLiveButton:SetWidth(108)
+    self.frame.actionNextLiveButton:SetHeight(20)
+    self.frame.actionNextLiveButton:SetPoint("LEFT", self.frame.actionRequestButton, "RIGHT", 8, 0)
+    self.frame.actionNextLiveButton:SetText("Next Live Buddy")
+    self.frame.actionNextLiveButton:SetScript("OnClick", function()
+        local currentTime = QB.Compat:GetTime()
+        local staleTimeout = QB:GetOption("staleTimeoutSeconds")
+        local currentBuddy = QB.State:GetFocusedBuddy()
+        local liveName = QB.State:GetFreshestLivePeer(currentTime, staleTimeout, currentBuddy)
+        if liveName then
+            QB.State:SetFocusedBuddy(liveName)
+            QB:RefreshViews("next-live-buddy")
+            if not QB:GetOption("recoveryPromptSilent") then
+                QB.Compat:Printf("QuestBuddy: switched focus to live buddy %s.", liveName)
+            end
+        elseif not QB:GetOption("recoveryPromptSilent") then
+            QB.Compat:Printf("QuestBuddy: no live buddies available.")
+        end
+    end)
+    self.frame.actionNextLiveButton:Hide()
+
     self.frame.refreshButton = CreateFrame("Button", nil, self.frame, "UIPanelButtonTemplate")
     self.frame.refreshButton:SetWidth(64)
     self.frame.refreshButton:SetHeight(20)
@@ -255,7 +330,7 @@ function UI:Initialize()
     updateSimulationButton(self.frame.simulateButton)
 
     self.frame.scroll = CreateFrame("ScrollFrame", "QuestBuddyMainScroll", self.frame, "UIPanelScrollFrameTemplate")
-    self.frame.scroll:SetPoint("TOPLEFT", self.frame.countsText, "BOTTOMLEFT", 0, -12)
+    self.frame.scroll:SetPoint("TOPLEFT", self.frame.actionRequestButton, "BOTTOMLEFT", 0, -10)
     self.frame.scroll:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -30, 16)
 
     self.frame.content = CreateFrame("Frame", nil, self.frame.scroll)
@@ -337,11 +412,16 @@ function UI:Refresh(reason)
 
     local focusedBuddy = QB.State:GetFocusedBuddy()
     local peer = focusedBuddy and QB.State:GetPeer(focusedBuddy) or nil
-    local now = QB.Compat:GetTime()
+    local currentTime = QB.Compat:GetTime()
     local staleTimeout = QB:GetOption("staleTimeoutSeconds")
-    local status = QB.State:GetPeerStatus(peer, now, staleTimeout)
-    local summaryRows = QB.State:GetPeerSummaryRows(now, staleTimeout)
-    local rows, buckets = UI.BuildDisplayRows(QB.State:GetLocalSnapshot(), peer, QB:GetOption("showOnlySharedQuests"))
+    local status = QB.State:GetPeerStatus(peer, currentTime, staleTimeout)
+    local summaryRows = QB.State:GetPeerSummaryRows(currentTime, staleTimeout)
+    local rows, buckets = UI.BuildDisplayRows(
+        QB.State:GetLocalSnapshot(),
+        peer,
+        QB:GetOption("showOnlySharedQuests"),
+        QB:GetOption("sortSharedByLargestDelta")
+    )
     local statusColor = STATUS_COLORS[status] or STATUS_COLORS.Offline
     local partyBoardEnabled = QB:GetOption("enablePartyBoard")
 
@@ -375,6 +455,8 @@ function UI:Refresh(reason)
         #(buckets.buddyOnly or {}),
         #(buckets.mineOnly or {})
     ))
+
+    updateContextActions(self, focusedBuddy, status, peer, currentTime, staleTimeout)
 
     if #rows == 0 then
         local emptyText = focusedBuddy and "No quest rows yet" or "Join a party with another QuestBuddy user"
