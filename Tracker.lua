@@ -9,6 +9,7 @@ local Tracker = QB.Tracker
 local CreateFrame = _G.CreateFrame
 local UIParent = _G.UIParent
 local BackdropTemplate = _G.BackdropTemplateMixin and "BackdropTemplate" or nil
+local math = math
 
 Tracker.frame = Tracker.frame or nil
 Tracker.rows = Tracker.rows or {}
@@ -163,6 +164,46 @@ local function applyBackdrop(frame)
     frame:SetBackdropBorderColor(0.3, 0.33, 0.38, 1)
 end
 
+local function getOverlaySize(state)
+    local scale = tonumber(state and state.scale) or 1
+    local fixedWidth = tonumber(state and state.width)
+    local fixedHeight = tonumber(state and state.height)
+
+    if fixedWidth and fixedWidth > 0 and fixedHeight and fixedHeight > 0 then
+        return fixedWidth, fixedHeight, scale
+    end
+
+    return 280 * scale, 24 * scale, scale
+end
+
+function Tracker:ApplyOverlayState()
+    if not self.frame then
+        return
+    end
+
+    local state = QB:GetTrackerOverlayState() or {}
+    local width, height = getOverlaySize(state)
+    self.frame:ClearAllPoints()
+    self.frame:SetPoint(
+        state.point or "TOPRIGHT",
+        UIParent,
+        state.relativePoint or "TOPRIGHT",
+        tonumber(state.x) or -60,
+        tonumber(state.y) or -220
+    )
+    self.frame:SetWidth(width)
+    self.frame:SetHeight(height)
+end
+
+function Tracker:SaveOverlayAnchor()
+    if not self.frame then
+        return
+    end
+
+    local point, _, relativePoint, xOfs, yOfs = self.frame:GetPoint(1)
+    QB:SetTrackerOverlayAnchor(point, relativePoint, xOfs, yOfs)
+end
+
 function Tracker.BuildRows(localSnapshot, peer, status)
     local rows = {}
     local peerSnapshot = peer and peer.snapshot or nil
@@ -292,16 +333,34 @@ function Tracker:Initialize()
     end
 
     self.frame = CreateFrame("Frame", "QuestBuddyTrackerOverlay", UIParent, BackdropTemplate)
-    self.frame:SetWidth(280)
-    self.frame:SetHeight(24)
-    applyBackdrop(self.frame)
+    self.frame:SetMovable(true)
+    self.frame:SetClampedToScreen(true)
+    self.frame:EnableMouse(true)
+    self.frame:RegisterForDrag("LeftButton")
+    self.frame:EnableMouseWheel(true)
+    self.frame:SetScript("OnDragStart", function(frame)
+        if not QB:GetOption("unlockTrackerOverlay") then
+            return
+        end
+        frame:StartMoving()
+    end)
+    self.frame:SetScript("OnDragStop", function(frame)
+        frame:StopMovingOrSizing()
+        self:SaveOverlayAnchor()
+    end)
+    self.frame:SetScript("OnMouseWheel", function(_, delta)
+        if not QB:GetOption("unlockTrackerOverlay") then
+            return
+        end
 
-    local watchFrame = _G.WatchFrame
-    if watchFrame then
-        self.frame:SetPoint("TOPLEFT", watchFrame, "BOTTOMLEFT", 0, -8)
-    else
-        self.frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -60, -220)
-    end
+        local state = QB:GetTrackerOverlayState()
+        local nextScale = (tonumber(state.scale) or 1) + ((delta > 0 and 1 or -1) * 0.05)
+        QB:SetTrackerOverlayScale(nextScale)
+        self:ApplyOverlayState()
+        self:Refresh("overlay-scale-wheel")
+    end)
+    applyBackdrop(self.frame)
+    self:ApplyOverlayState()
 
     self.frame.header = self.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     self.frame.header:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 10, -8)
@@ -344,6 +403,8 @@ function Tracker:Refresh()
         return
     end
 
+    self:ApplyOverlayState()
+
     local focusedBuddy = QB.State:GetFocusedBuddy()
     local localSnapshot = QB.State:GetLocalSnapshot()
     local peer = focusedBuddy and QB.State:GetPeer(focusedBuddy) or nil
@@ -377,6 +438,8 @@ function Tracker:Refresh()
         self.rows[index]:Hide()
     end
 
-    self.frame:SetHeight(28 + (#rows * 34))
+    local state = QB:GetTrackerOverlayState() or {}
+    local _, minHeight, scale = getOverlaySize(state)
+    self.frame:SetHeight(math.max(minHeight, 28 + (#rows * 34 * scale)))
     self.frame:Show()
 end

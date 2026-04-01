@@ -9,6 +9,7 @@ local SlashCmdList = _G.SlashCmdList
 QB.defaults = {
     options = {
         enableTrackerOverlay = true,
+        unlockTrackerOverlay = false,
         enablePartyBoard = true,
         showOnlySharedQuests = false,
         sortSharedByLargestDelta = false,
@@ -25,6 +26,15 @@ QB.defaults = {
         y = 0,
         width = 420,
         height = 380,
+    },
+    trackerOverlay = {
+        point = "TOPRIGHT",
+        relativePoint = "TOPRIGHT",
+        x = -60,
+        y = -220,
+        scale = 1,
+        width = nil,
+        height = nil,
     },
     lastFocusedBuddy = nil,
 }
@@ -47,6 +57,32 @@ end
 
 function QB:GetWindowState()
     return self.db.window
+end
+
+function QB:GetTrackerOverlayState()
+    return self.db.trackerOverlay
+end
+
+function QB:SetTrackerOverlayAnchor(point, relativePoint, x, y)
+    local overlay = self:GetTrackerOverlayState()
+    overlay.point = point or overlay.point
+    overlay.relativePoint = relativePoint or overlay.relativePoint
+    overlay.x = tonumber(x) or overlay.x
+    overlay.y = tonumber(y) or overlay.y
+end
+
+function QB:SetTrackerOverlayScale(scale)
+    local overlay = self:GetTrackerOverlayState()
+    overlay.scale = self.Compat:Clamp(tonumber(scale) or 1, 0.7, 1.6)
+end
+
+function QB:ResetTrackerOverlayPosition()
+    local overlay = self:GetTrackerOverlayState()
+    local defaults = self.defaults and self.defaults.trackerOverlay or {}
+    overlay.point = defaults.point or "TOPRIGHT"
+    overlay.relativePoint = defaults.relativePoint or "TOPRIGHT"
+    overlay.x = defaults.x or -60
+    overlay.y = defaults.y or -220
 end
 
 function QB:RefreshViews(reason)
