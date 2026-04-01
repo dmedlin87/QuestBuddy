@@ -686,6 +686,28 @@ local function testMainWindowRowBuilding()
     expectTrue(string.find(rows[2].buddyText, "5/6", 1, true) ~= nil, "main window buddy summary text")
 end
 
+local function testPeerSummaryRowsIncludeSharedAndReadyCounts()
+    QB.State:Initialize({})
+    QB.State:GetSession().localSnapshot = makeSnapshot("Me", 1, {
+        makeQuest("shared", "Shared Quest", 10, true, "active", {}),
+        makeQuest("mine-only", "Mine Only", 11, false, "active", {}),
+    })
+
+    QB.State:ApplyPeerSnapshot("Buddy-Realm", makeSnapshot("Buddy-Realm", 2, {
+        makeQuest("shared", "Shared Quest", 10, true, "ready", {}),
+        makeQuest("buddy-only", "Buddy Only", 12, false, "ready", {}),
+    }), 25)
+    QB.State:MarkPeerOffline("Offline-Realm", 26)
+
+    local summaryRows = QB.State:GetPeerSummaryRows(30, 90)
+    expectEquals(#summaryRows, 2, "peer summary returns one row per known peer")
+    expectEquals(summaryRows[1].name, "Buddy-Realm", "peer summary rows are sorted by peer name")
+    expectEquals(summaryRows[1].status, "Live", "peer summary exposes peer status")
+    expectEquals(summaryRows[1].sharedCount, 1, "peer summary counts quests shared with local snapshot")
+    expectEquals(summaryRows[1].readyCount, 2, "peer summary counts ready-to-turn-in quests")
+    expectEquals(summaryRows[2].status, "Offline", "peer summary includes offline peers")
+end
+
 local function testPartyJoinLeaveBehavior()
     QB.State:Initialize({ autoFocusSingleBuddy = true })
     QB.State:ApplyPeerSnapshot("Alice", makeSnapshot("Alice", 1, {}), 10)
@@ -1270,6 +1292,7 @@ local function testAddonInitializesRetailRuntime()
     expectTrue(QB.frame.events["GROUP_ROSTER_UPDATE"] == true, "addon listens for retail group roster updates")
     expectTrue(QB.Options.category ~= nil, "addon registers a retail settings category")
     expectEquals(_G.__sentMessages[1].distribution, "PARTY", "initial roster sync still broadcasts to the party")
+    expectEquals(QB:GetOption("enablePartyBoard"), true, "addon initializes enablePartyBoard option to its default")
 end
 
 local function testOptionsInitializeWithoutTemplateTextRegion()
@@ -1388,6 +1411,7 @@ local tests = {
     testFocusedBuddySelection,
     testTrackerRenderingDecisions,
     testMainWindowRowBuilding,
+    testPeerSummaryRowsIncludeSharedAndReadyCounts,
     testPartyJoinLeaveBehavior,
     testSimulatedBuddyUsesLocalQuests,
     testRefreshViewsDoesNotPersistSimulatedFocus,
