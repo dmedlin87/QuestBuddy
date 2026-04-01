@@ -15,9 +15,24 @@ Tracker.frame = Tracker.frame or nil
 Tracker.rows = Tracker.rows or {}
 
 local TOOLTIP_HEADER_PREFIX = "QuestBuddy: "
+local TRACKER_REASON_LABELS = {
+    stale = "Stale",
+    updating = "Updating",
+    offline = "Offline",
+    not_on_quest = "Buddy missing",
+}
+local TRACKER_FRAME_WIDTH_PADDING = 20
+local TRACKER_ROW_SPACING = 10
+local TRACKER_DETAIL_GAP = 2
+local TRACKER_ROW_BOTTOM_PADDING = 2
+local TRACKER_FALLBACK_LINE_HEIGHT = 12
 
 local function getStatusColor(status)
     return QB.State:GetStatusColor(status)
+end
+
+local function getTrackerReasonLabel(reason)
+    return TRACKER_REASON_LABELS[reason] or TRACKER_REASON_LABELS.not_on_quest
 end
 
 local function normalizeTooltipText(text)
@@ -170,6 +185,62 @@ local function getOverlaySize(state)
     return 280 * scale, 24 * scale, scale
 end
 
+local function getRowWidth(frame)
+    local width = frame and frame.GetWidth and frame:GetWidth() or 280
+    return math.max(120, width - TRACKER_FRAME_WIDTH_PADDING)
+end
+
+local function estimateWrappedLineCount(text, width)
+    local charsPerLine = math.max(1, math.floor((tonumber(width) or 0) / 7))
+    local lineCount = 0
+
+    text = tostring(text or "")
+    if text == "" then
+        return 1
+    end
+
+    for rawLine in string.gmatch(text .. "\n", "([^\n]*)\n") do
+        if rawLine == "" then
+            lineCount = lineCount + 1
+        else
+            lineCount = lineCount + math.max(1, math.ceil(string.len(rawLine) / charsPerLine))
+        end
+    end
+
+    return math.max(1, lineCount)
+end
+
+local function measureTextHeight(fontString, text, width)
+    if fontString and fontString.SetWidth then
+        fontString:SetWidth(width)
+    end
+    if fontString and fontString.SetText then
+        fontString:SetText(text or "")
+    end
+
+    local stringHeight = fontString and fontString.GetStringHeight and fontString:GetStringHeight()
+    if stringHeight and stringHeight > 0 then
+        return stringHeight
+    end
+
+    return estimateWrappedLineCount(text, width) * TRACKER_FALLBACK_LINE_HEIGHT
+end
+
+local function configureRowText(row, width)
+    if row.title.SetWidth then
+        row.title:SetWidth(width)
+    end
+    if row.detail.SetWidth then
+        row.detail:SetWidth(width)
+    end
+    if row.title.SetWordWrap then
+        row.title:SetWordWrap(true)
+    end
+    if row.detail.SetWordWrap then
+        row.detail:SetWordWrap(true)
+    end
+end
+
 function Tracker:ApplyOverlayState()
     if not self.frame then
         return
@@ -211,15 +282,15 @@ function Tracker.BuildRows(localSnapshot, peer, status)
             local buddyText
 
             if status == "Stale" then
-                buddyText = QB.State:GetReasonMessage("stale")
+                buddyText = getTrackerReasonLabel("stale")
             elseif status == "Updating" then
-                buddyText = QB.State:GetReasonMessage("updating")
+                buddyText = getTrackerReasonLabel("updating")
             elseif status == "Offline" then
-                buddyText = QB.State:GetReasonMessage("offline")
+                buddyText = getTrackerReasonLabel("offline")
             elseif buddyQuest then
                 buddyText = QB.Snapshot:SummarizeQuest(buddyQuest)
             else
-                buddyText = QB.State:GetReasonMessage("not_on_quest")
+                buddyText = getTrackerReasonLabel("not_on_quest")
             end
 
             table.insert(rows, {
@@ -233,7 +304,7 @@ function Tracker.BuildRows(localSnapshot, peer, status)
     if watchedCount == 0 and localSnapshot then
         table.insert(rows, {
             title = "No tracked quests",
-            buddyText = QB.State:GetReasonMessage("not_on_quest"),
+            buddyText = getTrackerReasonLabel("not_on_quest"),
             hasBuddyQuest = false,
         })
     end
@@ -385,7 +456,7 @@ function Tracker:AcquireRow(index)
     end
 
     local row = CreateFrame("Frame", nil, self.frame)
-    row:SetWidth(260)
+    row:SetWidth(getRowWidth(self.frame))
     row:SetHeight(28)
 
     row.title = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -397,12 +468,13 @@ function Tracker:AcquireRow(index)
     row.detail:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
     row.detail:SetPoint("TOPRIGHT", row.title, "BOTTOMRIGHT", 0, -2)
     row.detail:SetJustifyH("LEFT")
+    configureRowText(row, row:GetWidth())
 
     self.rows[index] = row
     return row
 end
 
-function Tracker:Refresh()
+function Tracker:Refresh(_)
     if not self.frame then
         return
     end
@@ -428,19 +500,25 @@ function Tracker:Refresh()
     local statusColor = getStatusColor(status)
     self.frame.header:SetText(QB.Compat:Colorize(string.format("%s  %s", focusedBuddy, QB.State:GetStatusLabel(status)), statusColor))
 
+    local rowWidth = getRowWidth(self.frame)
+    local totalRowsHeight = 0
     local previousRow = nil
     for index, rowData in ipairs(rows) do
         local row = self:AcquireRow(index)
         row:ClearAllPoints()
         if previousRow then
-            row:SetPoint("TOPLEFT", previousRow, "BOTTOMLEFT", 0, -10)
+            row:SetPoint("TOPLEFT", previousRow, "BOTTOMLEFT", 0, -TRACKER_ROW_SPACING)
         else
             row:SetPoint("TOPLEFT", self.frame.header, "BOTTOMLEFT", 0, -6)
         end
-        row.title:SetText(rowData.title)
-        row.detail:SetText(rowData.buddyText)
+        row:SetWidth(rowWidth)
+        configureRowText(row, rowWidth)
+        local titleHeight = measureTextHeight(row.title, rowData.title, rowWidth)
+        local detailHeight = measureTextHeight(row.detail, rowData.buddyText, rowWidth)
+        row:SetHeight(titleHeight + TRACKER_DETAIL_GAP + detailHeight + TRACKER_ROW_BOTTOM_PADDING)
         row:Show()
         previousRow = row
+        totalRowsHeight = totalRowsHeight + row:GetHeight() + (index > 1 and TRACKER_ROW_SPACING or 0)
     end
 
     for index = #rows + 1, #self.rows do
@@ -448,7 +526,7 @@ function Tracker:Refresh()
     end
 
     local state = QB:GetTrackerOverlayState() or {}
-    local _, minHeight, scale = getOverlaySize(state)
-    self.frame:SetHeight(math.max(minHeight, 28 + (#rows * 34 * scale)))
+    local _, minHeight = getOverlaySize(state)
+    self.frame:SetHeight(math.max(minHeight, 28 + totalRowsHeight))
     self.frame:Show()
 end

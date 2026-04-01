@@ -94,8 +94,8 @@ local function formatDeltaIndicator(row)
     return string.format("+%d Me", amount)
 end
 
-local function formatFreshnessAge(snapshotCreatedAt, now)
-    local ageSeconds = math.max(0, math.floor((now or 0) - (tonumber(snapshotCreatedAt) or 0)))
+local function formatFreshnessAge(ageSeconds)
+    ageSeconds = math.max(0, math.floor(tonumber(ageSeconds) or 0))
     if ageSeconds < 60 then
         return string.format("%ds old", ageSeconds)
     end
@@ -196,23 +196,18 @@ function UI.BuildDisplayRows(localSnapshot, peer, rowConfig, emptyReason)
     local buckets = QB.State.BuildQuestRows(localSnapshot, peer and peer.snapshot or nil, rowConfig)
     local rows = {}
     local now = QB.Compat:GetTime()
-    local peerAgeText = peer and peer.snapshot and formatFreshnessAge(peer.snapshot.createdAt, now) or nil
+    local peerAgeSeconds = QB.State:GetPeerFreshnessAge(peer, now)
+    local peerAgeText = peerAgeSeconds and formatFreshnessAge(peerAgeSeconds) or nil
 
     local function appendSection(sectionTitle, sectionRows)
+        if #sectionRows == 0 then
+            return
+        end
+
         table.insert(rows, {
             kind = "header",
             text = sectionTitle,
         })
-
-        if #sectionRows == 0 then
-            table.insert(rows, {
-                kind = "quest",
-                title = "No quest rows",
-                myText = QB.State:GetReasonMessage(emptyReason or "not_on_quest"),
-                buddyText = "Tip: sync with your buddy and track a shared quest.",
-            })
-            return
-        end
 
         for _, row in ipairs(sectionRows) do
             local buddyText = row.buddy and ("Buddy: " .. QB.Snapshot:SummarizeQuest(row.buddy)) or "Buddy: Missing"

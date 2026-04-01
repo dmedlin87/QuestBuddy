@@ -8,11 +8,34 @@ local function makeFontString()
     return {
         text = "",
         shown = true,
+        width = 0,
         SetPoint = function() end,
         ClearAllPoints = function() end,
-        SetWidth = function() end,
+        SetWidth = function(self, width)
+            self.width = width or 0
+        end,
         SetText = function(self, text)
             self.text = text
+        end,
+        SetWordWrap = function() end,
+        GetStringHeight = function(self)
+            local text = tostring(self.text or "")
+            local width = tonumber(self.width) or 0
+            if text == "" then
+                return 12
+            end
+
+            local charsPerLine = math.max(1, math.floor(math.max(width, 1) / 7))
+            local lineCount = 0
+            for line in string.gmatch(text, "[^\n]+") do
+                lineCount = lineCount + math.max(1, math.ceil(string.len(line) / charsPerLine))
+            end
+
+            if lineCount == 0 then
+                lineCount = 1
+            end
+
+            return lineCount * 12
         end,
         SetJustifyH = function() end,
         Show = function(self)
@@ -89,11 +112,24 @@ end
 
 function frameMethods:SetMovable() end
 function frameMethods:EnableMouse() end
+function frameMethods:EnableMouseWheel(enabled)
+    self.mouseWheelEnabled = enabled and true or false
+end
 function frameMethods:RegisterForDrag() end
 function frameMethods:SetClampedToScreen() end
 function frameMethods:SetBackdrop() end
 function frameMethods:SetBackdropColor() end
 function frameMethods:SetBackdropBorderColor() end
+function frameMethods:SetMinMaxValues(minValue, maxValue)
+    self.minValue = minValue
+    self.maxValue = maxValue
+end
+function frameMethods:SetValueStep(step)
+    self.valueStep = step
+end
+function frameMethods:SetObeyStepOnDrag(enabled)
+    self.obeyStepOnDrag = enabled and true or false
+end
 function frameMethods:RegisterForClicks() end
 function frameMethods:SetAutoFocus() end
 function frameMethods:SetNumeric() end
@@ -133,6 +169,18 @@ end
 
 function frameMethods:GetText()
     return self.text or ""
+end
+
+function frameMethods:SetValue(value)
+    self.value = value
+    local onValueChanged = self.scripts and self.scripts.OnValueChanged
+    if onValueChanged then
+        onValueChanged(self, value)
+    end
+end
+
+function frameMethods:GetValue()
+    return self.value
 end
 
 function frameMethods:GetName()
@@ -615,6 +663,26 @@ local function testSnapshotSerializeChunkRoundTrip()
     expectEquals(decoded.quests[1].objectives[1].current, 2, "snapshot objective roundtrip")
 end
 
+local function testSnapshotDeserializeRejectsTruncatedRecords()
+    local truncatedQuest = table.concat({
+        "S\t1\tBuddy\t4\t40\t1",
+        "Q\tid:1\t101\tTraining Day\t10\tactive\t1\t40",
+    }, "\n")
+    local truncatedObjective = table.concat({
+        "S\t1\tBuddy\t4\t40\t1",
+        "Q\tid:1\t101\tTraining Day\t10\tactive\t1\t40\t1",
+        "O\tWidgets: 1/4\t1\t4",
+    }, "\n")
+
+    local questDecoded, questError = QB.Snapshot:Deserialize(truncatedQuest)
+    local objectiveDecoded, objectiveError = QB.Snapshot:Deserialize(truncatedObjective)
+
+    expectEquals(questDecoded, nil, "snapshot parser rejects truncated quest records")
+    expectEquals(questError, "malformed snapshot record", "snapshot parser reports malformed truncated quest records")
+    expectEquals(objectiveDecoded, nil, "snapshot parser rejects truncated objective records")
+    expectEquals(objectiveError, "malformed snapshot record", "snapshot parser reports malformed truncated objective records")
+end
+
 local function testSignatureIgnoresUpdatedTimestamp()
     local left = makeSnapshot("Me-Realm", 1, {
         makeQuest("id:1", "Stable Quest", 10, true, "active", {}, 100),
@@ -696,18 +764,21 @@ local function testMainWindowRowBuilding()
         makeQuest("mine", "Mine Quest", 11, false, "ready", {}),
     })
     local peer = {
+        lastUpdate = 115,
         snapshot = makeSnapshot("Buddy", 1, {
             makeQuest("shared", "Shared Quest", 10, true, "active", { { text = "Apples: 5/6", current = 5, required = 6, done = false } }),
             makeQuest("buddy", "Buddy Quest", 12, false, "active", { { text = "Dust: 1/4", current = 1, required = 4, done = false } }),
         }),
     }
 
+    _G.__time = 120
     local rows, buckets = QB.UI.BuildDisplayRows(localSnapshot, peer, false)
     expectEquals(#buckets.shared, 1, "main window shared bucket")
     expectEquals(#buckets.mineOnly, 1, "main window mine bucket")
     expectEquals(#buckets.buddyOnly, 1, "main window buddy bucket")
     expectEquals(rows[1].text, "Shared Quests", "main window first section header")
     expectTrue(string.find(rows[2].buddyText, "5/6", 1, true) ~= nil, "main window buddy summary text")
+    expectTrue(string.find(rows[2].buddyText, "5s old", 1, true) ~= nil, "main window freshness uses local receive time")
 end
 
 local function testPeerSummaryRowsIncludeSharedAndReadyCounts()
@@ -1030,7 +1101,7 @@ local function testQueueSnapshotBroadcastReschedulesDuringCooldown()
     QB.Compat.IsInParty = function()
         return true
     end
-    QB.Comms.SendSnapshot = function()
+    QB.Comms.SendSnapshot = function(_, _)
         sendCount = sendCount + 1
         return true
     end
@@ -1492,6 +1563,7 @@ local tests = {
     testProtocolRoundTrip,
     testMalformedMessageRejected,
     testSnapshotSerializeChunkRoundTrip,
+    testSnapshotDeserializeRejectsTruncatedRecords,
     testSignatureIgnoresUpdatedTimestamp,
     testStalePeerHandling,
     testNewerHelloMarksPeerUpdating,

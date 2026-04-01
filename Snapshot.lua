@@ -5,6 +5,11 @@ _G.QuestBuddy = QB
 QB.Snapshot = QB.Snapshot or {}
 
 local Snapshot = QB.Snapshot
+local SNAPSHOT_FIELD_COUNTS = {
+    S = 6,
+    Q = 9,
+    O = 5,
+}
 
 local function escapeField(value)
     value = tostring(value or "")
@@ -143,6 +148,15 @@ function Snapshot:Deserialize(serialized)
     for line in string.gmatch(serialized, "([^\n]+)") do
         local fields = splitEscapedFields(line)
         local recordType = fields[1]
+        local expectedFieldCount = SNAPSHOT_FIELD_COUNTS[recordType]
+
+        if not expectedFieldCount then
+            return nil, "unknown snapshot record"
+        end
+
+        if #fields ~= expectedFieldCount then
+            return nil, "malformed snapshot record"
+        end
 
         if recordType == "S" then
             if snapshot.player then
@@ -181,8 +195,6 @@ function Snapshot:Deserialize(serialized)
                 done = fields[5] == "1",
             })
             expectedObjectives = expectedObjectives - 1
-        else
-            return nil, "unknown snapshot record"
         end
     end
 
