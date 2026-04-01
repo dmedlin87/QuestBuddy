@@ -457,7 +457,63 @@ local function buildObjectiveComparison(mineQuest, buddyQuest)
     return comparisons, totalDelta, aheadSide
 end
 
-function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared, sortSharedByLargestDelta)
+local function normalizeRowFilters(configOrShowOnlyShared, sortSharedByLargestDelta)
+    if type(configOrShowOnlyShared) == "table" then
+        local config = configOrShowOnlyShared
+        return {
+            watchedOnly = config.watchedOnly == true,
+            readyToTurnIn = config.readyToTurnIn == true,
+            showStaleOfflineEmphasis = config.showStaleOfflineEmphasis == true,
+            sortSharedByLargestDelta = config.sortSharedByLargestDelta == true,
+            showOnlyShared = (config.showOnlyShared == true) or (config.showOnlySharedQuests == true),
+            peerStatus = config.peerStatus,
+        }
+    end
+
+    return {
+        watchedOnly = false,
+        readyToTurnIn = false,
+        showStaleOfflineEmphasis = false,
+        sortSharedByLargestDelta = sortSharedByLargestDelta == true,
+        showOnlyShared = configOrShowOnlyShared == true,
+        peerStatus = nil,
+    }
+end
+
+local function rowIsReady(mineQuest, buddyQuest)
+    return (mineQuest and mineQuest.status == "ready") or (buddyQuest and buddyQuest.status == "ready") or false
+end
+
+local function shouldIncludeRow(row, filters)
+    if filters.watchedOnly and not row.watched then
+        return false
+    end
+
+    if filters.readyToTurnIn and not row.isReady then
+        return false
+    end
+
+    return true
+end
+
+local function applyRowMetadata(row, filters)
+    local status = filters.peerStatus
+    if filters.showStaleOfflineEmphasis and (status == "Stale" or status == "Offline") then
+        row.buddyEmphasis = status
+    else
+        row.buddyEmphasis = nil
+    end
+end
+
+local function addRow(bucket, row, filters)
+    applyRowMetadata(row, filters)
+    if shouldIncludeRow(row, filters) then
+        table.insert(bucket, row)
+    end
+end
+
+function State.BuildQuestRows(localSnapshot, peerSnapshot, configOrShowOnlyShared, sortSharedByLargestDelta)
+    local filters = normalizeRowFilters(configOrShowOnlyShared, sortSharedByLargestDelta)
     local rows = {
         shared = {},
         mineOnly = {},
@@ -471,40 +527,43 @@ function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared, sortS
         local buddyQuest = peerMap[localQuest.questKey]
         if buddyQuest then
             local objectiveComparison, totalDelta, aheadSide = buildObjectiveComparison(localQuest, buddyQuest)
-            table.insert(rows.shared, {
+            addRow(rows.shared, {
                 questKey = localQuest.questKey,
                 title = localQuest.title,
                 level = localQuest.level,
                 mine = localQuest,
                 buddy = buddyQuest,
                 watched = localQuest.watched,
+                isReady = rowIsReady(localQuest, buddyQuest),
                 objectiveComparison = objectiveComparison,
                 delta = totalDelta,
                 ahead_side = aheadSide,
-            })
-        elseif not showOnlyShared then
-            table.insert(rows.mineOnly, {
+            }, filters)
+        elseif not filters.showOnlyShared then
+            addRow(rows.mineOnly, {
                 questKey = localQuest.questKey,
                 title = localQuest.title,
                 level = localQuest.level,
                 mine = localQuest,
                 buddy = nil,
                 watched = localQuest.watched,
-            })
+                isReady = rowIsReady(localQuest, nil),
+            }, filters)
         end
     end
 
-    if not showOnlyShared then
+    if not filters.showOnlyShared then
         for _, buddyQuest in ipairs((peerSnapshot and peerSnapshot.quests) or {}) do
             if not localMap[buddyQuest.questKey] then
-                table.insert(rows.buddyOnly, {
+                addRow(rows.buddyOnly, {
                     questKey = buddyQuest.questKey,
                     title = buddyQuest.title,
                     level = buddyQuest.level,
                     mine = nil,
                     buddy = buddyQuest,
                     watched = false,
-                })
+                    isReady = rowIsReady(nil, buddyQuest),
+                }, filters)
             end
         end
     end
@@ -519,7 +578,7 @@ function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared, sortS
         return string.lower(left.title or "") < string.lower(right.title or "")
     end
 
-    if sortSharedByLargestDelta then
+    if filters.sortSharedByLargestDelta then
         table.sort(rows.shared, function(left, right)
             local leftDelta = math.abs(left.delta or 0)
             local rightDelta = math.abs(right.delta or 0)
@@ -534,5 +593,6 @@ function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared, sortS
     table.sort(rows.mineOnly, sortRows)
     table.sort(rows.buddyOnly, sortRows)
 
+    rows.filters = filters
     return rows
 end

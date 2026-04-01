@@ -202,16 +202,32 @@ function Options:Initialize()
         "Prioritize shared quests where one side is furthest ahead in objective progress.",
         16,
         -300,
-        function() return QB:GetOption("sortSharedByLargestDelta") end,
-        function(value) QB:SetOption("sortSharedByLargestDelta", value); QB:RefreshViews("options") end
+        function() return QB:GetRowDisplayPreset().sortSharedByLargestDelta end,
+        function(value)
+            local preset = QB:GetRowDisplayPreset()
+            preset.sortSharedByLargestDelta = value and true or false
+            QB:SetRowDisplayPreset(preset)
+            QB:RefreshViews("options")
+        end
     )
+
+    self.panel.resetFiltersButton = CreateFrame("Button", nil, self.panel, "UIPanelButtonTemplate")
+    self.panel.resetFiltersButton:SetWidth(190)
+    self.panel.resetFiltersButton:SetHeight(22)
+    self.panel.resetFiltersButton:SetPoint("TOPLEFT", self.panel.sortSharedDelta, "BOTTOMLEFT", 0, -8)
+    self.panel.resetFiltersButton:SetText("Reset Filters/Sort Preset")
+    self.panel.resetFiltersButton:SetScript("OnClick", function()
+        QB:ResetRowDisplayPreset()
+        self.panel.sortSharedDelta:Refresh()
+        QB:RefreshViews("options")
+    end)
 
     self.panel.lockWindow = createCheckbox(
         self.panel,
         "Lock main window",
         "Prevent dragging the main QuestBuddy window.",
         16,
-        -330,
+        -360,
         function() return QB:GetOption("lockWindow") end,
         function(value) QB:SetOption("lockWindow", value) end
     )
@@ -221,7 +237,7 @@ function Options:Initialize()
         "Enable stale/offline action prompts",
         "Show inline recovery chips when the focused buddy is stale or offline.",
         16,
-        -360,
+        -390,
         function() return QB:GetOption("enableRecoveryPrompts") end,
         function(value) QB:SetOption("enableRecoveryPrompts", value); QB:RefreshViews("options") end
     )
@@ -231,13 +247,13 @@ function Options:Initialize()
         "Silent recovery prompts",
         "Suppress chat feedback when using stale/offline recovery actions.",
         16,
-        -390,
+        -420,
         function() return QB:GetOption("recoveryPromptSilent") end,
         function(value) QB:SetOption("recoveryPromptSilent", value); QB:RefreshViews("options") end
     )
 
     self.panel.timeoutLabel = self.panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -430)
+    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -460)
     self.panel.timeoutLabel:SetText("Stale timeout (seconds)")
 
     self.panel.timeoutBox = CreateFrame("EditBox", nil, self.panel, "InputBoxTemplate")
