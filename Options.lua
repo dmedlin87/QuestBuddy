@@ -100,18 +100,28 @@ function Options:Initialize()
         function(value) QB:SetOption("autoFocusSingleBuddy", value); QB.State:ReevaluateFocus(QB.db); QB:RefreshViews("options") end
     )
 
+    self.panel.sortSharedDelta = createCheckbox(
+        self.panel,
+        "Sort shared by largest delta",
+        "Prioritize shared quests where one side is furthest ahead in objective progress.",
+        16,
+        -160,
+        function() return QB:GetOption("sortSharedByLargestDelta") end,
+        function(value) QB:SetOption("sortSharedByLargestDelta", value); QB:RefreshViews("options") end
+    )
+
     self.panel.lockWindow = createCheckbox(
         self.panel,
         "Lock main window",
         "Prevent dragging the main QuestBuddy window.",
         16,
-        -160,
+        -190,
         function() return QB:GetOption("lockWindow") end,
         function(value) QB:SetOption("lockWindow", value) end
     )
 
     self.panel.timeoutLabel = self.panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -210)
+    self.panel.timeoutLabel:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -240)
     self.panel.timeoutLabel:SetText("Stale timeout (seconds)")
 
     self.panel.timeoutBox = CreateFrame("EditBox", nil, self.panel, "InputBoxTemplate")
@@ -136,6 +146,7 @@ function Options:Initialize()
         panel.overlay:Refresh()
         panel.sharedOnly:Refresh()
         panel.autoFocus:Refresh()
+        panel.sortSharedDelta:Refresh()
         panel.lockWindow:Refresh()
         panel.timeoutBox:SetText(tostring(QB:GetOption("staleTimeoutSeconds") or 90))
     end)

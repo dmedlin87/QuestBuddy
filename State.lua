@@ -331,7 +331,57 @@ function State:ToggleSimulatedPeer(now)
     return true
 end
 
-function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared)
+local function buildObjectiveComparison(mineQuest, buddyQuest)
+    local comparisons = {}
+    local mineObjectives = (mineQuest and mineQuest.objectives) or {}
+    local buddyObjectives = (buddyQuest and buddyQuest.objectives) or {}
+    local objectiveCount = math.max(#mineObjectives, #buddyObjectives)
+    local totalDelta = 0
+
+    for index = 1, objectiveCount do
+        local myObjective = mineObjectives[index] or {}
+        local buddyObjective = buddyObjectives[index] or {}
+        local myCount = tonumber(myObjective.current)
+        local buddyCount = tonumber(buddyObjective.current)
+        local delta = 0
+        local aheadSide = "even"
+
+        if myCount and buddyCount then
+            delta = buddyCount - myCount
+            if delta > 0 then
+                aheadSide = "buddy"
+            elseif delta < 0 then
+                aheadSide = "me"
+            end
+        elseif buddyCount then
+            delta = buddyCount
+            aheadSide = buddyCount ~= 0 and "buddy" or "even"
+        elseif myCount then
+            delta = -myCount
+            aheadSide = myCount ~= 0 and "me" or "even"
+        end
+
+        totalDelta = totalDelta + delta
+        comparisons[index] = {
+            index = index,
+            my_count = myCount or 0,
+            buddy_count = buddyCount or 0,
+            delta = delta,
+            ahead_side = aheadSide,
+        }
+    end
+
+    local aheadSide = "even"
+    if totalDelta > 0 then
+        aheadSide = "buddy"
+    elseif totalDelta < 0 then
+        aheadSide = "me"
+    end
+
+    return comparisons, totalDelta, aheadSide
+end
+
+function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared, sortSharedByLargestDelta)
     local rows = {
         shared = {},
         mineOnly = {},
@@ -344,6 +394,7 @@ function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared)
     for _, localQuest in ipairs((localSnapshot and localSnapshot.quests) or {}) do
         local buddyQuest = peerMap[localQuest.questKey]
         if buddyQuest then
+            local objectiveComparison, totalDelta, aheadSide = buildObjectiveComparison(localQuest, buddyQuest)
             table.insert(rows.shared, {
                 questKey = localQuest.questKey,
                 title = localQuest.title,
@@ -351,6 +402,9 @@ function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared)
                 mine = localQuest,
                 buddy = buddyQuest,
                 watched = localQuest.watched,
+                objectiveComparison = objectiveComparison,
+                delta = totalDelta,
+                ahead_side = aheadSide,
             })
         elseif not showOnlyShared then
             table.insert(rows.mineOnly, {
@@ -389,7 +443,18 @@ function State.BuildQuestRows(localSnapshot, peerSnapshot, showOnlyShared)
         return string.lower(left.title or "") < string.lower(right.title or "")
     end
 
-    table.sort(rows.shared, sortRows)
+    if sortSharedByLargestDelta then
+        table.sort(rows.shared, function(left, right)
+            local leftDelta = math.abs(left.delta or 0)
+            local rightDelta = math.abs(right.delta or 0)
+            if leftDelta ~= rightDelta then
+                return leftDelta > rightDelta
+            end
+            return sortRows(left, right)
+        end)
+    else
+        table.sort(rows.shared, sortRows)
+    end
     table.sort(rows.mineOnly, sortRows)
     table.sort(rows.buddyOnly, sortRows)
 
