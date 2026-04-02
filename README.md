@@ -78,6 +78,12 @@ Run the local regression suite from the addon root. `lua`, `luajit`, `lua5.1`, o
 ./check.ps1
 ```
 
+Validate the generated install and release wrappers plus packaging contract with:
+
+```powershell
+./scripts/Test-AddonProject.ps1
+```
+
 ## Release Packaging
 
 QuestBuddy can be published for AscensionUp through GitHub Releases. The release workflow runs when you push a tag like `v1.0.0` and uploads:
@@ -98,3 +104,5 @@ If you only want to validate packaging and manifest generation without enforcing
 ```powershell
 ./scripts/Build-AscensionRelease.ps1 -OutputDir release-assets-local
 ```
+
+`addon-release.json` is the source of truth for the generated install and release wrappers in this repo.

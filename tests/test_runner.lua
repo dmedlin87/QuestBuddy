@@ -1432,6 +1432,29 @@ local function testOptionsInitializeWithoutTemplateTextRegion()
     loadModule("Options.lua")
 end
 
+local function testOptionsInitializeWithoutSliderObeyStepMethod()
+    resetAddonState()
+
+    local originalCreateFrame = _G.CreateFrame
+    local originalSetObeyStepOnDrag = frameMethods.SetObeyStepOnDrag
+    frameMethods.SetObeyStepOnDrag = nil
+
+    _G.CreateFrame = function(frameType, name, parent, template)
+        return newFrame(frameType, name, parent, template)
+    end
+
+    loadModule("Options.lua")
+    QB.Options:Initialize()
+
+    expectTrue(QB.Options.panel ~= nil, "options panel initializes when slider lacks SetObeyStepOnDrag")
+    expectTrue(QB.Options.panel.overlayScale ~= nil, "overlay scale slider is still created without SetObeyStepOnDrag")
+    expectEquals(QB.Options.panel.overlayScale.obeyStepOnDrag, nil, "slider leaves obey-step flag unset when method is unavailable")
+
+    _G.CreateFrame = originalCreateFrame
+    frameMethods.SetObeyStepOnDrag = originalSetObeyStepOnDrag
+    loadModule("Options.lua")
+end
+
 local function testTocUsesSingleRetailInterfaceValue()
     local toc = readFile("QuestBuddy.toc")
     local interfaceLine = string.match(toc, "([^\r\n]+)")

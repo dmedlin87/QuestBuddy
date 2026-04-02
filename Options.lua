@@ -58,7 +58,9 @@ local function createSlider(parent, name, label, lowText, highText, x, y, minVal
     slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     slider:SetMinMaxValues(minValue, maxValue)
     slider:SetValueStep(valueStep)
-    slider:SetObeyStepOnDrag(true)
+    if slider.SetObeyStepOnDrag then
+        slider:SetObeyStepOnDrag(true)
+    end
     slider:SetWidth(220)
 
     local text = _G[slider:GetName() .. "Text"]

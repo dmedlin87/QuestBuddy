@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate installer-ready release assets
+      - name: Validate addon toolchain contract
         shell: pwsh
         run: |
-          ./scripts/Build-AscensionRelease.ps1 -OutputDir "release-assets-validate"
+          ./scripts/Test-AddonProject.ps1

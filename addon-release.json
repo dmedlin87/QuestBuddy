@@ -1,9 +1,21 @@
-{
-  "schemaVersion": 1,
-  "addonId": "quest-buddy",
-  "displayName": "QuestBuddy",
-  "version": "1.0.1",
-  "targetSupport": ["Bronzebeard", "CoA"],
-  "folders": ["QuestBuddy"],
-  "minInstallerVersion": "1.0.0"
+﻿{
+    "schemaVersion":  2,
+    "toolchainVersion":  "1.0.0",
+    "addonId":  "quest-buddy",
+    "displayName":  "QuestBuddy",
+    "version":  "1.0.1",
+    "targetSupport":  [
+                          "Bronzebeard",
+                          "CoA"
+                      ],
+    "folders":  [
+                    "QuestBuddy"
+                ],
+    "minInstallerVersion":  "1.0.0",
+    "defaultWowPath":  "C:\\Program Files\\Ascension Launcher\\resources\\client",
+    "ptrWowPath":  "C:\\Program Files\\Ascension Launcher\\resources\\ascension_ptr",
+    "tocPath":  "QuestBuddy.toc",
+    "tocContentRoot":  ".",
+    "releaseOutputDir":  "release-assets",
+    "publishTimeoutSeconds":  120
 }
