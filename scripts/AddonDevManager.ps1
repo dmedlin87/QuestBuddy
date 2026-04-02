@@ -127,6 +127,10 @@ class AddonDevManager {
         return $argList
     }
 
+    [string] GetPtrPermissionRepairCommand([string]$directoryPath) {
+        return ('icacls "{0}" /grant "*S-1-5-32-545:(OI)(CI)M"' -f $directoryPath)
+    }
+
     [void] RequestElevation([string]$actionDescription) {
         if ([string]::IsNullOrWhiteSpace($this.Config.EntryScriptPath)) {
             throw "$actionDescription requires administrator privileges. Re-run PowerShell as Administrator."
@@ -146,6 +150,33 @@ class AddonDevManager {
         }
     }
 
+    [void] GrantPtrWriteAccess([string]$directoryPath) {
+        if ($this.Config.Flavor -ne "ptr") {
+            return
+        }
+
+        if (-not $this.TestIsAdministrator()) {
+            throw (
+                "Preparing PTR addon directory permissions for {0} requires administrator privileges. " +
+                "Run this once in an elevated PowerShell: {1}"
+            ) -f $this.Config.AddonName, ($this.GetPtrPermissionRepairCommand($directoryPath))
+        }
+
+        $grantTarget = "*S-1-5-32-545:(OI)(CI)M"
+        $process = Start-Process -FilePath "icacls.exe" `
+            -ArgumentList @($directoryPath, "/grant", $grantTarget) `
+            -NoNewWindow `
+            -Wait `
+            -PassThru
+
+        if ($process.ExitCode -ne 0) {
+            throw (
+                "Failed to grant PTR addon directory write access for '{0}'. " +
+                "Try this once in an elevated PowerShell: {1}"
+            ) -f $directoryPath, ($this.GetPtrPermissionRepairCommand($directoryPath))
+        }
+    }
+
     [void] EnsureWriteAccess([string]$directoryPath, [string]$actionDescription, [bool]$requireAdministrator) {
         if ($requireAdministrator -and -not $this.TestIsAdministrator()) {
             $this.RequestElevation($actionDescription)
@@ -157,6 +188,18 @@ class AddonDevManager {
             Remove-Item -Path $probePath -Force -ErrorAction Stop
         }
         catch {
+            if ($this.Config.Flavor -eq "ptr") {
+                $this.GrantPtrWriteAccess($directoryPath)
+
+                try {
+                    New-Item -ItemType File -Path $probePath -Force -ErrorAction Stop | Out-Null
+                    Remove-Item -Path $probePath -Force -ErrorAction Stop
+                    return
+                }
+                catch {
+                }
+            }
+
             if (-not $this.TestIsAdministrator()) {
                 $this.RequestElevation($actionDescription)
             }
@@ -464,14 +507,36 @@ function Wait-ForAddonDevExitAcknowledgement {
     [void][System.Console]::ReadKey($true)
 }
 
+function ConvertTo-AddonDevConfig {
+    param(
+        [Parameter(Mandatory)]
+        [object]$InputObject
+    )
+
+    if ($InputObject -is [AddonDevConfig]) {
+        return $InputObject
+    }
+
+    $config = [AddonDevConfig]::new()
+    foreach ($property in $config.PSObject.Properties) {
+        $sourceProperty = $InputObject.PSObject.Properties[$property.Name]
+        if ($null -ne $sourceProperty) {
+            $config.$($property.Name) = $sourceProperty.Value
+        }
+    }
+
+    return $config
+}
+
 function Invoke-AddonDevCommand {
     param(
         [Parameter(Mandatory)]
-        [AddonDevConfig]$Config
+        [object]$Config
     )
 
     $exitCode = 0
-    $manager = [AddonDevManager]::new($Config)
+    $resolvedConfig = ConvertTo-AddonDevConfig -InputObject $Config
+    $manager = [AddonDevManager]::new($resolvedConfig)
 
     try {
         $manager.Run()
@@ -487,7 +552,7 @@ function Invoke-AddonDevCommand {
         $exitCode = if ($manager.ExitCode -ne 0) { $manager.ExitCode } else { 1 }
     }
     finally {
-        Wait-ForAddonDevExitAcknowledgement -PauseOnExit:$Config.PauseOnExit
+        Wait-ForAddonDevExitAcknowledgement -PauseOnExit:$resolvedConfig.PauseOnExit
     }
 
     exit $exitCode

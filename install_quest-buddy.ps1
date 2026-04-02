@@ -13,7 +13,7 @@ param(
 )
 
 if ($Flavor -eq "ptr" -and -not $PSBoundParameters.ContainsKey("WowPath")) {
-    $WowPath = "C:\Program Files\Ascension PTR"
+    $WowPath = "C:\Program Files\Ascension Launcher\resources\ascension_ptr"
 }
 
 $sharedHelperPath = Join-Path $PSScriptRoot "scripts\AddonDevManager.ps1"
